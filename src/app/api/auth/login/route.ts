@@ -34,9 +34,10 @@ export async function POST(req: NextRequest) {
       user: { id: user.id, nome: user.nome, plano: user.plano, modo_bot: user.modo_bot }
     });
 
+    const isProduction = process.env.NODE_ENV === 'production';
     response.cookies.set('dimdim_session', token, {
       httpOnly: true,
-      secure: false,
+      secure: isProduction,
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60,
       path: '/',
