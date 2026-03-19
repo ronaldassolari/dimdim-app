@@ -12,7 +12,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
     }
 
-    const user = db.prepare('SELECT id, username, nome, email, whatsapp, plano, modo_bot, humor_bot, avatar_url FROM users WHERE id = ?').get(session.id);
+    const user = db.prepare('SELECT id, username, nome, email, whatsapp, plano, plano_expira, modo_bot, humor_bot, avatar_url FROM users WHERE id = ?').get(session.id);
     return NextResponse.json({ user });
   } catch {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });

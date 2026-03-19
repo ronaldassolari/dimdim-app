@@ -3,6 +3,27 @@ import getDb from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
+export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    seed();
+    const session = getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const db = getDb();
+    const cartao = db.prepare('SELECT * FROM cartoes WHERE id = ? AND user_id = ? AND ativo = 1').get(Number(params.id), session.id);
+    if (!cartao) {
+      return NextResponse.json({ error: 'Cartão não encontrado' }, { status: 404 });
+    }
+
+    return NextResponse.json(cartao);
+  } catch (error) {
+    console.error('Erro ao buscar cartão:', error);
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     seed();

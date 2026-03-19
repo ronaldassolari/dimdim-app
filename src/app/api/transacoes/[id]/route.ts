@@ -3,6 +3,27 @@ import getDb from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
+export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    seed();
+    const session = getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const db = getDb();
+    const transacao = db.prepare('SELECT * FROM transacoes WHERE id = ? AND user_id = ?').get(Number(params.id), session.id);
+    if (!transacao) {
+      return NextResponse.json({ error: 'Transação não encontrada' }, { status: 404 });
+    }
+
+    return NextResponse.json(transacao);
+  } catch (error) {
+    console.error('Erro ao buscar transação:', error);
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     seed();
