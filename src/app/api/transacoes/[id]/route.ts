@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
-    const transacao = db.prepare('SELECT * FROM transacoes WHERE id = ? AND user_id = ?').get(Number(params.id), session.id);
-    if (!transacao) {
+    const { rows } = await sql`SELECT * FROM transacoes WHERE id = ${Number(params.id)} AND user_id = ${session.id}`;
+    if (!rows[0]) {
       return NextResponse.json({ error: 'Transação não encontrada' }, { status: 404 });
     }
 
-    return NextResponse.json(transacao);
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error('Erro ao buscar transação:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
@@ -26,16 +25,16 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const existing = db.prepare('SELECT * FROM transacoes WHERE id = ? AND user_id = ?').get(Number(id), session.id) as Record<string, unknown> | undefined;
+    const { rows: existingRows } = await sql`SELECT * FROM transacoes WHERE id = ${Number(id)} AND user_id = ${session.id}`;
+    const existing = existingRows[0] as Record<string, unknown> | undefined;
     if (!existing) {
       return NextResponse.json({ error: 'Transação não encontrada' }, { status: 404 });
     }
@@ -43,30 +42,23 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const body = await request.json();
     const { descricao, valor, tipo, categoria, status, data, cartao_id, recorrente, frequencia, observacoes } = body;
 
-    db.prepare(`
+    await sql`
       UPDATE transacoes SET
-        descricao = COALESCE(?, descricao),
-        valor = COALESCE(?, valor),
-        tipo = COALESCE(?, tipo),
-        categoria = COALESCE(?, categoria),
-        status = COALESCE(?, status),
-        data = COALESCE(?, data),
-        cartao_id = ?,
-        recorrente = COALESCE(?, recorrente),
-        frequencia = ?,
-        observacoes = ?
-      WHERE id = ? AND user_id = ?
-    `).run(
-      descricao || null, valor || null, tipo || null, categoria || null,
-      status || null, data || null, cartao_id !== undefined ? cartao_id : (existing as Record<string, unknown>).cartao_id,
-      recorrente !== undefined ? (recorrente ? 1 : 0) : null,
-      frequencia !== undefined ? frequencia : (existing as Record<string, unknown>).frequencia,
-      observacoes !== undefined ? observacoes : (existing as Record<string, unknown>).observacoes,
-      Number(id), session.id
-    );
+        descricao = COALESCE(${descricao || null}, descricao),
+        valor = COALESCE(${valor || null}, valor),
+        tipo = COALESCE(${tipo || null}, tipo),
+        categoria = COALESCE(${categoria || null}, categoria),
+        status = COALESCE(${status || null}, status),
+        data = COALESCE(${data || null}, data),
+        cartao_id = ${cartao_id !== undefined ? cartao_id : (existing.cartao_id as any)},
+        recorrente = COALESCE(${recorrente !== undefined ? (recorrente ? 1 : 0) : null}, recorrente),
+        frequencia = ${frequencia !== undefined ? frequencia : (existing.frequencia as any)},
+        observacoes = ${observacoes !== undefined ? observacoes : (existing.observacoes as any)}
+      WHERE id = ${Number(id)} AND user_id = ${session.id}
+    `;
 
-    const updated = db.prepare('SELECT * FROM transacoes WHERE id = ?').get(Number(id));
-    return NextResponse.json(updated);
+    const { rows: updatedRows } = await sql`SELECT * FROM transacoes WHERE id = ${Number(id)}`;
+    return NextResponse.json(updatedRows[0]);
   } catch (error) {
     console.error('Erro ao atualizar transação:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
@@ -75,21 +67,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const existing = db.prepare('SELECT * FROM transacoes WHERE id = ? AND user_id = ?').get(Number(id), session.id);
-    if (!existing) {
+    const { rows: existingRows } = await sql`SELECT * FROM transacoes WHERE id = ${Number(id)} AND user_id = ${session.id}`;
+    if (!existingRows[0]) {
       return NextResponse.json({ error: 'Transação não encontrada' }, { status: 404 });
     }
 
-    db.prepare('DELETE FROM transacoes WHERE id = ? AND user_id = ?').run(Number(id), session.id);
+    await sql`DELETE FROM transacoes WHERE id = ${Number(id)} AND user_id = ${session.id}`;
 
     return NextResponse.json({ message: 'Transação excluída com sucesso' });
   } catch (error) {

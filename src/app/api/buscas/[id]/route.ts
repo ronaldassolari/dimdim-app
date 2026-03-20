@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
-    const busca = db.prepare('SELECT * FROM buscas_preco WHERE id = ? AND user_id = ?').get(Number(params.id), session.id);
-    if (!busca) {
+    const { rows } = await sql`SELECT * FROM buscas_preco WHERE id = ${Number(params.id)} AND user_id = ${session.id}`;
+    if (!rows[0]) {
       return NextResponse.json({ error: 'Busca não encontrada' }, { status: 404 });
     }
 
-    return NextResponse.json(busca);
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error('Erro ao buscar:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
@@ -26,21 +25,20 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const existing = db.prepare('SELECT * FROM buscas_preco WHERE id = ? AND user_id = ?').get(Number(id), session.id);
-    if (!existing) {
+    const { rows: existingRows } = await sql`SELECT * FROM buscas_preco WHERE id = ${Number(id)} AND user_id = ${session.id}`;
+    if (!existingRows[0]) {
       return NextResponse.json({ error: 'Busca não encontrada' }, { status: 404 });
     }
 
-    db.prepare('DELETE FROM buscas_preco WHERE id = ? AND user_id = ?').run(Number(id), session.id);
+    await sql`DELETE FROM buscas_preco WHERE id = ${Number(id)} AND user_id = ${session.id}`;
 
     return NextResponse.json({ message: 'Busca excluída com sucesso' });
   } catch (error) {

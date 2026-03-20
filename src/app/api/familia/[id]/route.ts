@@ -1,36 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const existing = db.prepare('SELECT * FROM contas_familia WHERE id = ? AND dono_id = ?').get(Number(id), session.id);
-    if (!existing) {
+    const { rows: existingRows } = await sql`SELECT * FROM contas_familia WHERE id = ${Number(id)} AND dono_id = ${session.id}`;
+    if (!existingRows[0]) {
       return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 });
     }
 
     const body = await request.json();
     const { permissao, status } = body;
 
-    db.prepare(`
+    await sql`
       UPDATE contas_familia SET
-        permissao = COALESCE(?, permissao),
-        status = COALESCE(?, status)
-      WHERE id = ? AND dono_id = ?
-    `).run(permissao || null, status || null, Number(id), session.id);
+        permissao = COALESCE(${permissao || null}, permissao),
+        status = COALESCE(${status || null}, status)
+      WHERE id = ${Number(id)} AND dono_id = ${session.id}
+    `;
 
-    const updated = db.prepare('SELECT * FROM contas_familia WHERE id = ?').get(Number(id));
-    return NextResponse.json(updated);
+    const { rows: updatedRows } = await sql`SELECT * FROM contas_familia WHERE id = ${Number(id)}`;
+    return NextResponse.json(updatedRows[0]);
   } catch (error) {
     console.error('Erro ao atualizar membro:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
@@ -39,21 +38,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const existing = db.prepare('SELECT * FROM contas_familia WHERE id = ? AND dono_id = ?').get(Number(id), session.id);
-    if (!existing) {
+    const { rows: existingRows } = await sql`SELECT * FROM contas_familia WHERE id = ${Number(id)} AND dono_id = ${session.id}`;
+    if (!existingRows[0]) {
       return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 });
     }
 
-    db.prepare('DELETE FROM contas_familia WHERE id = ? AND dono_id = ?').run(Number(id), session.id);
+    await sql`DELETE FROM contas_familia WHERE id = ${Number(id)} AND dono_id = ${session.id}`;
 
     return NextResponse.json({ message: 'Membro removido com sucesso' });
   } catch (error) {

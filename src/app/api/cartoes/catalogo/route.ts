@@ -1,37 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { seedCartoesCatalogo } from '@/lib/seed-cartoes';
 
 export async function GET(request: NextRequest) {
   try {
-    seedCartoesCatalogo();
-    const db = getDb();
+    await seedCartoesCatalogo();
 
-    const banco = request.nextUrl.searchParams.get('banco');
-    const bandeira = request.nextUrl.searchParams.get('bandeira');
-    const nivel = request.nextUrl.searchParams.get('nivel');
-    const programa = request.nextUrl.searchParams.get('programa');
+    const banco = request.nextUrl.searchParams.get('banco') || null;
+    const bandeira = request.nextUrl.searchParams.get('bandeira') || null;
+    const nivel = request.nextUrl.searchParams.get('nivel') || null;
+    const programa = request.nextUrl.searchParams.get('programa') || null;
     const sem_anuidade = request.nextUrl.searchParams.get('sem_anuidade');
     const sala_vip = request.nextUrl.searchParams.get('sala_vip');
-    const search = request.nextUrl.searchParams.get('search')?.substring(0, 100);
+    const search = request.nextUrl.searchParams.get('search')?.substring(0, 100) || null;
 
-    let query = 'SELECT * FROM cartoes_catalogo WHERE ativo = 1';
-    const params: (string | number)[] = [];
+    const semAnuidade = sem_anuidade === '1' || sem_anuidade === 'true';
+    const salaVip = sala_vip === '1' || sala_vip === 'true';
 
-    if (banco) { query += ' AND banco = ?'; params.push(banco); }
-    if (bandeira) { query += ' AND bandeira = ?'; params.push(bandeira); }
-    if (nivel) { query += ' AND nivel = ?'; params.push(nivel); }
-    if (programa) { query += ' AND programas_compativeis LIKE ?'; params.push(`%${programa}%`); }
-    if (sem_anuidade === '1' || sem_anuidade === 'true') { query += ' AND anuidade = 0'; }
-    if (sala_vip === '1' || sala_vip === 'true') { query += ' AND sala_vip = 1'; }
+    const { rows } = await sql`
+      SELECT * FROM cartoes_catalogo
+      WHERE ativo = 1
+      ORDER BY pontos_nacional DESC, banco ASC
+    `;
+
+    let cartoes = rows as Record<string, any>[];
+    if (banco) cartoes = cartoes.filter(c => c.banco === banco);
+    if (bandeira) cartoes = cartoes.filter(c => c.bandeira === bandeira);
+    if (nivel) cartoes = cartoes.filter(c => c.nivel === nivel);
+    if (programa) cartoes = cartoes.filter(c => ((c.programas_compativeis as string) || '').includes(programa));
+    if (semAnuidade) cartoes = cartoes.filter(c => Number(c.anuidade) === 0);
+    if (salaVip) cartoes = cartoes.filter(c => Number(c.sala_vip) === 1);
     if (search) {
-      query += ' AND (nome LIKE ? OR banco LIKE ? OR bandeira LIKE ? OR nivel LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      const s = search.toLowerCase();
+      cartoes = cartoes.filter(c =>
+        ((c.nome as string) || '').toLowerCase().includes(s) ||
+        ((c.banco as string) || '').toLowerCase().includes(s) ||
+        ((c.bandeira as string) || '').toLowerCase().includes(s) ||
+        ((c.nivel as string) || '').toLowerCase().includes(s)
+      );
     }
-
-    query += ' ORDER BY pontos_nacional DESC, banco ASC';
-
-    const cartoes = db.prepare(query).all(...params);
 
     // Parse JSON fields
     const parsed = cartoes.map((c: any) => ({

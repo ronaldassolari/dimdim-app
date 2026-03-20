@@ -198,6 +198,10 @@ export default function CartoesPage() {
   const [showCatalogo, setShowCatalogo] = useState(false);
   const [searchingCatalogo, setSearchingCatalogo] = useState(false);
   const catalogoRef = useRef<HTMLDivElement>(null);
+  const [editingCartao, setEditingCartao] = useState<Cartao | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Cartao | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -272,9 +276,29 @@ export default function CartoesPage() {
     setShowCatalogo(false);
   };
 
-  const openModal = () => {
-    setFormData(EMPTY_FORM);
-    setCatalogoSearch('');
+  const openModal = (cartao?: Cartao) => {
+    setEditError('');
+    if (cartao) {
+      setEditingCartao(cartao);
+      let programas: string[] = [];
+      try { programas = JSON.parse(cartao.programas_pontos || '[]'); } catch { programas = []; }
+      setFormData({
+        apelido: cartao.apelido,
+        banco: cartao.banco,
+        bandeira: cartao.bandeira,
+        nivel: cartao.nivel,
+        limiteDisplay: cartao.limite > 0 ? cartao.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+        vencimento: String(cartao.vencimento),
+        cor: cartao.cor,
+        programas,
+        catalogoId: null,
+      });
+      setCatalogoSearch('');
+    } else {
+      setEditingCartao(null);
+      setFormData(EMPTY_FORM);
+      setCatalogoSearch('');
+    }
     setCatalogoResults([]);
     setShowCatalogo(false);
     setModalOpen(true);
@@ -282,7 +306,9 @@ export default function CartoesPage() {
 
   const closeModal = () => {
     setModalOpen(false);
+    setEditingCartao(null);
     setFormData(EMPTY_FORM);
+    setEditError('');
   };
 
   const updateForm = (field: keyof FormData, value: string | string[]) => {
@@ -304,12 +330,13 @@ export default function CartoesPage() {
   };
 
   const handleSave = async () => {
-    if (!formData.apelido.trim()) { alert('Preencha o apelido'); return; }
-    if (!formData.banco) { alert('Selecione o banco'); return; }
-    if (!formData.bandeira) { alert('Selecione a bandeira'); return; }
-    if (!formData.nivel) { alert('Selecione o nível'); return; }
+    if (!formData.apelido.trim()) { setEditError('Preencha o apelido'); return; }
+    if (!formData.banco) { setEditError('Selecione o banco'); return; }
+    if (!formData.bandeira) { setEditError('Selecione a bandeira'); return; }
+    if (!formData.nivel) { setEditError('Selecione o nível'); return; }
 
     setSaving(true);
+    setEditError('');
     try {
       const body = {
         apelido: formData.apelido.trim(),
@@ -322,8 +349,11 @@ export default function CartoesPage() {
         programas_pontos: formData.programas.filter(p => p !== 'Nenhum'),
       };
 
-      const res = await fetch('/api/cartoes', {
-        method: 'POST',
+      const url = editingCartao ? `/api/cartoes/${editingCartao.id}` : '/api/cartoes';
+      const method = editingCartao ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -333,13 +363,38 @@ export default function CartoesPage() {
         throw new Error(err.error || 'Erro ao salvar');
       }
 
+      // Optimistic update for edit
+      if (editingCartao) {
+        const updated = await res.json();
+        setCartoes(prev => prev.map(c => c.id === editingCartao.id ? { ...c, ...updated } : c));
+      }
+
       closeModal();
       fetchCartoes();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao salvar cartão';
-      alert(message);
+      setEditError(message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/cartoes/${deleteConfirm.id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) {
+        throw new Error('Erro ao excluir cartão');
+      }
+      // Remove from local state
+      setCartoes(prev => prev.filter(c => c.id !== deleteConfirm.id));
+      setDeleteConfirm(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao excluir';
+      alert(message);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -375,7 +430,7 @@ export default function CartoesPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 800 }}>Meus Cartões</h1>
-        <button className="btn-primary" onClick={openModal} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button className="btn-primary" onClick={() => openModal()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           + Adicionar Cartão
         </button>
       </div>
@@ -401,7 +456,7 @@ export default function CartoesPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
             Adicione seus cartões para acompanhar gastos e pontos
           </p>
-          <button className="btn-primary" onClick={openModal}>+ Adicionar Cartão</button>
+          <button className="btn-primary" onClick={() => openModal()}>+ Adicionar Cartão</button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
@@ -546,6 +601,51 @@ export default function CartoesPage() {
                       ))}
                     </div>
                   )}
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #F3F4F6' }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openModal(cartao); }}
+                      style={{
+                        flex: 1,
+                        padding: '8px 14px',
+                        borderRadius: 10,
+                        border: '1.5px solid var(--border)',
+                        background: 'white',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        transition: 'all 200ms ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      ✏️ Editar
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(cartao); }}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 10,
+                        border: '1.5px solid #FCA5A5',
+                        background: 'white',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        transition: 'all 200ms ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -554,7 +654,7 @@ export default function CartoesPage() {
       )}
 
       {/* Add Card Modal */}
-      <Modal isOpen={modalOpen} onClose={closeModal} title="Adicionar Cartão">
+      <Modal isOpen={modalOpen} onClose={closeModal} title={editingCartao ? 'Editar Cartão' : 'Adicionar Cartão'}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Live Preview */}
           <div>
@@ -823,6 +923,12 @@ export default function CartoesPage() {
             </div>
           </div>
 
+          {editError && (
+            <div style={{ background: '#FFEBEE', color: '#EF4444', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
+              {editError}
+            </div>
+          )}
+
           {/* Save button */}
           <button
             className="btn-primary"
@@ -834,10 +940,54 @@ export default function CartoesPage() {
               cursor: saving ? 'not-allowed' : 'pointer',
             }}
           >
-            {saving ? 'Salvando...' : 'Salvar Cartão'}
+            {saving ? 'Salvando...' : editingCartao ? 'Salvar Alterações' : 'Salvar Cartão'}
           </button>
         </div>
       </Modal>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: '32px',
+            maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Excluir cartão?</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              Tem certeza que deseja remover <strong>{deleteConfirm.apelido}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12,
+                  border: '1.5px solid var(--border)', background: 'white',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                  background: '#EF4444', color: 'white', fontSize: 14,
+                  fontWeight: 600, cursor: deleteLoading ? 'not-allowed' : 'pointer',
+                  opacity: deleteLoading ? 0.7 : 1,
+                }}
+              >
+                {deleteLoading ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

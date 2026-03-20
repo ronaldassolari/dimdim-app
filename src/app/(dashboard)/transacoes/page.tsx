@@ -137,7 +137,7 @@ export default function TransacoesPage() {
       if (!res.ok) throw new Error('Erro ao carregar transações');
 
       const data = await res.json();
-      setTransacoes(Array.isArray(data) ? data : []);
+      setTransacoes(Array.isArray(data) ? data : (data.transacoes || []));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
       setError(message);

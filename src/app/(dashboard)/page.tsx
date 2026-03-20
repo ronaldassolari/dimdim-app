@@ -273,7 +273,8 @@ export default function DashboardPage() {
 
       if (txRes.ok) {
         const txData = await txRes.json();
-        setRecentTx(Array.isArray(txData) ? txData.slice(0, 5) : []);
+        const txList = Array.isArray(txData) ? txData : (txData.transacoes || []);
+        setRecentTx(txList.slice(0, 5));
       }
 
       if (userRes.ok) {
@@ -294,7 +295,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="fade-in" style={{ padding: '0' }}>
+      <div className="fade-in" role="status" aria-label="Carregando dashboard" style={{ padding: '0' }}>
         <style>{`
           @keyframes shimmer {
             0% { background-position: 200% 0; }
@@ -399,6 +400,7 @@ export default function DashboardPage() {
         {/* Month navigation */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 16 }}>
           <button
+            aria-label="Mes anterior"
             onClick={() => navigateMonth(-1)}
             style={{
               background: 'rgba(255,255,255,0.15)',
@@ -423,6 +425,7 @@ export default function DashboardPage() {
             {mesLabel}
           </span>
           <button
+            aria-label="Proximo mes"
             onClick={() => navigateMonth(1)}
             style={{
               background: 'rgba(255,255,255,0.15)',
@@ -471,7 +474,8 @@ export default function DashboardPage() {
       </div>
 
       {/* 4-card grid */}
-      <div
+      <section
+        aria-label="Resumo financeiro"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -557,10 +561,11 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </section>
 
       {/* Chart + Insights */}
-      <div
+      <section
+        aria-label="Grafico e insights"
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 320px',
@@ -608,10 +613,10 @@ export default function DashboardPage() {
             <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Nenhum insight disponível ainda.</p>
           )}
         </div>
-      </div>
+      </section>
 
       {/* Recent Transactions */}
-      <div className="card">
+      <section aria-label="Ultimas transacoes" className="card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700 }}>Últimas transações</h3>
           <a
@@ -704,7 +709,7 @@ export default function DashboardPage() {
             <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Nenhuma transação neste mês</p>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Responsive CSS */}
       <style>{`

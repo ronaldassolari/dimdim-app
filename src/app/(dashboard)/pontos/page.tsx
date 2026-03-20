@@ -99,6 +99,18 @@ export default function PontosPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editSaldo, setEditSaldo] = useState('');
 
+  // Delete state
+  const [deleteConfirm, setDeleteConfirm] = useState<Programa | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Add program state
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addProgramaId, setAddProgramaId] = useState('');
+  const [addSaldo, setAddSaldo] = useState('');
+  const [addValidade, setAddValidade] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
+  const [savingSaldoId, setSavingSaldoId] = useState<number | null>(null);
+
   const fetchProgramas = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -144,6 +156,7 @@ export default function PontosPage() {
     const saldo = parseInt(editSaldo, 10);
     if (isNaN(saldo) || saldo < 0) { alert('Informe um saldo válido'); return; }
 
+    setSavingSaldoId(programaId);
     try {
       const res = await fetch('/api/pontos', {
         method: 'POST',
@@ -156,6 +169,52 @@ export default function PontosPage() {
       fetchProgramas();
     } catch {
       alert('Erro ao atualizar saldo');
+    } finally {
+      setSavingSaldoId(null);
+    }
+  };
+
+  const handleDeletePrograma = async () => {
+    if (!deleteConfirm || !deleteConfirm.analise_id) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/pontos/${deleteConfirm.analise_id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('Erro ao remover programa');
+      setProgramas(prev => prev.map(p => p.id === deleteConfirm.id ? { ...p, saldo: null, validade: null, analise_id: null } : p));
+      setDeleteConfirm(null);
+    } catch {
+      alert('Erro ao remover programa');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleAddPrograma = async () => {
+    if (!addProgramaId) { alert('Selecione um programa'); return; }
+    const saldo = parseInt(addSaldo, 10);
+    if (isNaN(saldo) || saldo <= 0) { alert('Informe um saldo válido'); return; }
+
+    setAddSaving(true);
+    try {
+      const res = await fetch('/api/pontos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          programa_id: Number(addProgramaId),
+          saldo,
+          validade: addValidade || null,
+        }),
+      });
+      if (!res.ok) throw new Error('Erro ao adicionar programa');
+      setAddModalOpen(false);
+      setAddProgramaId('');
+      setAddSaldo('');
+      setAddValidade('');
+      fetchProgramas();
+    } catch {
+      alert('Erro ao adicionar programa');
+    } finally {
+      setAddSaving(false);
     }
   };
 
@@ -213,7 +272,12 @@ export default function PontosPage() {
 
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}>Programas de Pontos</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800 }}>Programas de Pontos</h1>
+          <button className="btn-primary" onClick={() => setAddModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            + Adicionar Programa
+          </button>
+        </div>
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -330,13 +394,15 @@ export default function PontosPage() {
                               borderRadius: 10,
                               display: 'inline-block',
                               marginBottom: 12,
-                              background: diasValidade < 60 ? '#FFEBEE' : '#E8F5E9',
-                              color: diasValidade < 60 ? '#EF4444' : '#00C853',
+                              background: diasValidade < 30 ? '#FFEBEE' : diasValidade < 90 ? '#FFF8E1' : '#E8F5E9',
+                              color: diasValidade < 30 ? '#EF4444' : diasValidade < 90 ? '#F59E0B' : '#00C853',
                               fontWeight: 600,
                             }}
                           >
-                            {diasValidade < 60
+                            {diasValidade < 30
                               ? `Expira em ${diasValidade} dias!`
+                              : diasValidade < 90
+                              ? `Atenção: ${diasValidade} dias restantes`
                               : `Válido até ${new Date(prog.validade + 'T00:00:00').toLocaleDateString('pt-BR')}`}
                           </div>
                         )}
@@ -408,6 +474,25 @@ export default function PontosPage() {
                             Editar saldo
                           </button>
                         )}
+
+                        <button
+                          onClick={() => setDeleteConfirm(prog)}
+                          style={{
+                            marginTop: 8,
+                            padding: '8px 16px',
+                            borderRadius: 10,
+                            border: '1.5px solid #FCA5A5',
+                            background: 'white',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: '#EF4444',
+                            cursor: 'pointer',
+                            transition: 'all 200ms ease',
+                            width: '100%',
+                          }}
+                        >
+                          Remover programa
+                        </button>
                       </div>
                     );
                   })}
@@ -748,6 +833,143 @@ export default function PontosPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Add Program Modal */}
+      {addModalOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: '32px',
+            maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Adicionar Programa</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Programa</label>
+                <select
+                  value={addProgramaId}
+                  onChange={e => setAddProgramaId(e.target.value)}
+                  style={{
+                    width: '100%', padding: '12px 16px', border: '1.5px solid var(--border)',
+                    borderRadius: 12, fontSize: 14, fontFamily: "'Inter', sans-serif",
+                    outline: 'none', background: 'white', appearance: 'auto' as React.CSSProperties['appearance'],
+                  }}
+                >
+                  <option value="">Selecione...</option>
+                  {programas.filter(p => !p.saldo || p.saldo === 0).map(p => (
+                    <option key={p.id} value={p.id}>{p.nome} ({p.tipo})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Saldo de pontos</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 50000"
+                  value={addSaldo}
+                  onChange={e => setAddSaldo(e.target.value)}
+                  style={{
+                    width: '100%', padding: '12px 16px', border: '1.5px solid var(--border)',
+                    borderRadius: 12, fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Data de vencimento (opcional)</label>
+                <input
+                  type="date"
+                  value={addValidade}
+                  onChange={e => setAddValidade(e.target.value)}
+                  style={{
+                    width: '100%', padding: '12px 16px', border: '1.5px solid var(--border)',
+                    borderRadius: 12, fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none',
+                  }}
+                />
+              </div>
+
+              {addSaldo && Number(addSaldo) > 0 && (
+                <div style={{ background: '#F3E8FF', padding: '12px 16px', borderRadius: 12, fontSize: 14, color: '#7C3AED', fontWeight: 500 }}>
+                  Seus {Number(addSaldo).toLocaleString('pt-BR')} pontos valem ~{formatMoney(Number(addSaldo) * 0.01)}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={() => { setAddModalOpen(false); setAddProgramaId(''); setAddSaldo(''); setAddValidade(''); }}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: 12,
+                    border: '1.5px solid var(--border)', background: 'white',
+                    fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={handleAddPrograma}
+                  disabled={addSaving}
+                  style={{
+                    flex: 1, opacity: addSaving ? 0.7 : 1,
+                    cursor: addSaving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {addSaving ? 'Salvando...' : 'Adicionar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: '32px',
+            maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Remover programa?</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              Tem certeza que deseja remover <strong>{deleteConfirm.nome}</strong>? Seu saldo de pontos será removido.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12,
+                  border: '1.5px solid var(--border)', background: 'white',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeletePrograma}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                  background: '#EF4444', color: 'white', fontSize: 14,
+                  fontWeight: 600, cursor: deleteLoading ? 'not-allowed' : 'pointer',
+                  opacity: deleteLoading ? 0.7 : 1,
+                }}
+              >
+                {deleteLoading ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 import { seedCartoesCatalogo } from '@/lib/seed-cartoes';
@@ -32,15 +32,14 @@ function calcularPontosPorReal(banco: string, nivel: string, apelido: string): n
 
 export async function GET() {
   try {
-    seed();
-    seedCartoesCatalogo();
+    await seed();
+    await seedCartoesCatalogo();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
-    const cartoes = db.prepare('SELECT * FROM cartoes WHERE user_id = ? AND ativo = 1').all(session.id);
+    const { rows: cartoes } = await sql`SELECT * FROM cartoes WHERE user_id = ${session.id} AND ativo = 1`;
 
     return NextResponse.json(cartoes);
   } catch (error) {
@@ -51,8 +50,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    seed();
-    seedCartoesCatalogo();
+    await seed();
+    await seedCartoesCatalogo();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -61,25 +60,33 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { apelido, banco, bandeira, nivel, limite, vencimento, cor, programas_pontos } = body;
 
-    if (!apelido || !banco || !bandeira || !nivel) {
+    if (!apelido || typeof apelido !== 'string' || apelido.length > 200) {
+      return NextResponse.json({ error: 'Apelido inválido' }, { status: 400 });
+    }
+    if (!banco || typeof banco !== 'string' || banco.length > 200) {
+      return NextResponse.json({ error: 'Banco inválido' }, { status: 400 });
+    }
+    if (!bandeira || typeof bandeira !== 'string' || bandeira.length > 100) {
+      return NextResponse.json({ error: 'Bandeira inválida' }, { status: 400 });
+    }
+    if (limite !== undefined && (isNaN(Number(limite)) || Number(limite) < 0)) {
+      return NextResponse.json({ error: 'Limite inválido' }, { status: 400 });
+    }
+    if (!nivel) {
       return NextResponse.json({ error: 'Campos obrigatórios: apelido, banco, bandeira, nivel' }, { status: 400 });
     }
 
     const pontos_por_real = calcularPontosPorReal(banco, nivel, apelido);
 
-    const db = getDb();
-    const result = db.prepare(`
+    const { rows } = await sql`
       INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, vencimento, cor, pontos_por_real, programas_pontos)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      session.id, apelido, banco, bandeira, nivel,
-      limite || 0, vencimento || 10, cor || '#1a1a2e',
-      pontos_por_real, JSON.stringify(programas_pontos || [])
-    );
+      VALUES (${session.id}, ${apelido}, ${banco}, ${bandeira}, ${nivel},
+        ${limite || 0}, ${vencimento || 10}, ${cor || '#1a1a2e'},
+        ${pontos_por_real}, ${JSON.stringify(programas_pontos || [])})
+      RETURNING *
+    `;
 
-    const cartao = db.prepare('SELECT * FROM cartoes WHERE id = ?').get(result.lastInsertRowid);
-
-    return NextResponse.json(cartao, { status: 201 });
+    return NextResponse.json(rows[0], { status: 201 });
   } catch (error) {
     console.error('Erro ao criar cartão:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });

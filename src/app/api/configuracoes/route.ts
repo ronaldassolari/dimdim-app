@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
-import { getSession } from '@/lib/auth';
-import { seed } from '@/lib/seed';
+import { NextResponse } from 'next/server';
+import { sql } from '@/lib/db';
+import { withAuth } from '@/lib/api-handler';
 
 interface UserRow {
   id: number;
@@ -19,76 +18,50 @@ interface UserRow {
   created_at: string;
 }
 
-export async function GET() {
-  try {
-    seed();
-    const session = getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+export const GET = withAuth(async (_request, session) => {
+  const { rows } = await sql`
+    SELECT id, username, nome, email, whatsapp, plano, plano_expira, modo_bot, humor_bot, horario_lembrete, horario_relatorio, avatar_url, created_at
+    FROM users WHERE id = ${session.id}
+  `;
+  const user = rows[0] as UserRow | undefined;
 
-    const db = getDb();
-    const user = db.prepare(
-      'SELECT id, username, nome, email, whatsapp, plano, plano_expira, modo_bot, humor_bot, horario_lembrete, horario_relatorio, avatar_url, created_at FROM users WHERE id = ?'
-    ).get(session.id) as UserRow | undefined;
-
-    if (!user) {
-      return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
-    }
-
-    return NextResponse.json(user);
-  } catch (error) {
-    console.error('Erro ao buscar configurações:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  if (!user) {
+    return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
   }
-}
 
-export async function PUT(request: NextRequest) {
-  try {
-    seed();
-    const session = getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+  return NextResponse.json(user);
+});
 
-    const body = await request.json();
-    const { nome, email, whatsapp, modo_bot, humor_bot, horario_lembrete } = body;
+export const PUT = withAuth(async (request, session) => {
+  const body = await request.json();
+  const { nome, email, whatsapp, modo_bot, humor_bot, horario_lembrete } = body;
 
-    const modosValidos = ['normal', 'economia', 'investidor'];
-    if (modo_bot && !modosValidos.includes(modo_bot)) {
-      return NextResponse.json({ error: `modo_bot inválido. Use: ${modosValidos.join(', ')}` }, { status: 400 });
-    }
-
-    const humoresValidos = ['amigavel', 'direto', 'tecnico'];
-    if (humor_bot && !humoresValidos.includes(humor_bot)) {
-      return NextResponse.json({ error: `humor_bot inválido. Use: ${humoresValidos.join(', ')}` }, { status: 400 });
-    }
-
-    const db = getDb();
-
-    db.prepare(`
-      UPDATE users SET
-        nome = COALESCE(?, nome),
-        email = COALESCE(?, email),
-        whatsapp = COALESCE(?, whatsapp),
-        modo_bot = COALESCE(?, modo_bot),
-        humor_bot = COALESCE(?, humor_bot),
-        horario_lembrete = COALESCE(?, horario_lembrete),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(
-      nome || null, email || null, whatsapp || null,
-      modo_bot || null, humor_bot || null, horario_lembrete || null,
-      session.id
-    );
-
-    const updated = db.prepare(
-      'SELECT id, username, nome, email, whatsapp, plano, plano_expira, modo_bot, humor_bot, horario_lembrete, horario_relatorio, avatar_url, created_at FROM users WHERE id = ?'
-    ).get(session.id);
-
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error('Erro ao atualizar configurações:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  const modosValidos = ['normal', 'economia', 'investidor'];
+  if (modo_bot && !modosValidos.includes(modo_bot)) {
+    return NextResponse.json({ error: `modo_bot inválido. Use: ${modosValidos.join(', ')}` }, { status: 400 });
   }
-}
+
+  const humoresValidos = ['amigavel', 'direto', 'tecnico'];
+  if (humor_bot && !humoresValidos.includes(humor_bot)) {
+    return NextResponse.json({ error: `humor_bot inválido. Use: ${humoresValidos.join(', ')}` }, { status: 400 });
+  }
+
+  await sql`
+    UPDATE users SET
+      nome = COALESCE(${nome || null}, nome),
+      email = COALESCE(${email || null}, email),
+      whatsapp = COALESCE(${whatsapp || null}, whatsapp),
+      modo_bot = COALESCE(${modo_bot || null}, modo_bot),
+      humor_bot = COALESCE(${humor_bot || null}, humor_bot),
+      horario_lembrete = COALESCE(${horario_lembrete || null}, horario_lembrete),
+      updated_at = NOW()
+    WHERE id = ${session.id}
+  `;
+
+  const { rows: updatedRows } = await sql`
+    SELECT id, username, nome, email, whatsapp, plano, plano_expira, modo_bot, humor_bot, horario_lembrete, horario_relatorio, avatar_url, created_at
+    FROM users WHERE id = ${session.id}
+  `;
+
+  return NextResponse.json(updatedRows[0]);
+});

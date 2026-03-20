@@ -137,7 +137,7 @@ export default function Sidebar({ user }: SidebarProps) {
         </div>
 
         {/* Menu Links */}
-        <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <nav aria-label="Menu principal" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {menuItems.map((item) => (
             <a
               key={item.href}
@@ -184,6 +184,7 @@ export default function Sidebar({ user }: SidebarProps) {
 
       {/* Mobile Bottom Nav */}
       <nav
+        aria-label="Menu mobile"
         className="mobile-nav"
         style={{
           position: 'fixed',

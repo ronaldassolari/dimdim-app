@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
@@ -14,14 +14,13 @@ function gerarCodigoConvite(): string {
 
 export async function GET() {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
-    const membros = db.prepare('SELECT * FROM contas_familia WHERE dono_id = ? ORDER BY created_at DESC').all(session.id);
+    const { rows: membros } = await sql`SELECT * FROM contas_familia WHERE dono_id = ${session.id} ORDER BY created_at DESC`;
 
     return NextResponse.json(membros);
   } catch (error) {
@@ -32,7 +31,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -52,15 +51,13 @@ export async function POST(request: NextRequest) {
 
     const codigo_convite = gerarCodigoConvite();
 
-    const db = getDb();
-    const result = db.prepare(`
+    const { rows } = await sql`
       INSERT INTO contas_familia (dono_id, nome_membro, email_membro, codigo_convite, permissao, status)
-      VALUES (?, ?, ?, ?, ?, 'PENDENTE')
-    `).run(session.id, nome_membro, email_membro, codigo_convite, permissao || 'proprio');
+      VALUES (${session.id}, ${nome_membro}, ${email_membro}, ${codigo_convite}, ${permissao || 'proprio'}, 'PENDENTE')
+      RETURNING *
+    `;
 
-    const membro = db.prepare('SELECT * FROM contas_familia WHERE id = ?').get(result.lastInsertRowid);
-
-    return NextResponse.json(membro, { status: 201 });
+    return NextResponse.json(rows[0], { status: 201 });
   } catch (error) {
     console.error('Erro ao convidar membro:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });

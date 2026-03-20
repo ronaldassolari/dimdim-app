@@ -1,8 +1,10 @@
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
-import getDb from './db';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dimdim-secret-key-2026-super-safe';
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️ JWT_SECRET not set! Using fallback. Set JWT_SECRET env var in production.');
+}
 
 export interface UserSession {
   id: number;

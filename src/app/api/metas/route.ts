@@ -1,52 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
-import { getSession } from '@/lib/auth';
-import { seed } from '@/lib/seed';
+import { NextResponse } from 'next/server';
+import { sql } from '@/lib/db';
+import { withAuth } from '@/lib/api-handler';
 
-export async function GET() {
-  try {
-    seed();
-    const session = getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
+export const GET = withAuth(async (_request, session) => {
+  const { rows: metas } = await sql`SELECT * FROM metas WHERE user_id = ${session.id} AND ativa = 1 ORDER BY created_at DESC`;
 
-    const db = getDb();
-    const metas = db.prepare('SELECT * FROM metas WHERE user_id = ? AND ativa = 1 ORDER BY created_at DESC').all(session.id);
+  return NextResponse.json(metas);
+});
 
-    return NextResponse.json(metas);
-  } catch (error) {
-    console.error('Erro ao listar metas:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+export const POST = withAuth(async (request, session) => {
+  const body = await request.json();
+  const { titulo, valor_alvo, valor_atual, categoria, prazo } = body;
+
+  if (!titulo || typeof titulo !== 'string' || titulo.length > 300) {
+    return NextResponse.json({ error: 'Título inválido' }, { status: 400 });
   }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    seed();
-    const session = getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { titulo, valor_alvo, valor_atual, categoria, prazo } = body;
-
-    if (!titulo || !valor_alvo) {
-      return NextResponse.json({ error: 'Campos obrigatórios: titulo, valor_alvo' }, { status: 400 });
-    }
-
-    const db = getDb();
-    const result = db.prepare(`
-      INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(session.id, titulo, valor_alvo, valor_atual || 0, categoria || null, prazo || null);
-
-    const meta = db.prepare('SELECT * FROM metas WHERE id = ?').get(result.lastInsertRowid);
-
-    return NextResponse.json(meta, { status: 201 });
-  } catch (error) {
-    console.error('Erro ao criar meta:', error);
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
+  if (!valor_alvo || isNaN(Number(valor_alvo)) || Number(valor_alvo) <= 0) {
+    return NextResponse.json({ error: 'Valor alvo inválido' }, { status: 400 });
   }
-}
+
+  const { rows } = await sql`
+    INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo)
+    VALUES (${session.id}, ${titulo}, ${valor_alvo}, ${valor_atual || 0}, ${categoria || null}, ${prazo || null})
+    RETURNING *
+  `;
+
+  return NextResponse.json(rows[0], { status: 201 });
+});

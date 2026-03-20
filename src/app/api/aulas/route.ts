@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
@@ -16,13 +16,11 @@ interface AulaRow {
 
 export async function GET() {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
-
-    const db = getDb();
 
     // Determine accessible tracks based on plan
     const plano = session.plano;
@@ -30,14 +28,15 @@ export async function GET() {
       ? ['iniciante']
       : ['iniciante', 'moderado', 'avancado'];
 
-    const aulas = db.prepare(`
+    const { rows } = await sql`
       SELECT
         a.id, a.trilha, a.numero, a.titulo, a.badge_nome, a.ordem,
         pa.concluida, pa.quiz_score
       FROM aulas a
-      LEFT JOIN progresso_aulas pa ON pa.aula_id = a.id AND pa.user_id = ?
+      LEFT JOIN progresso_aulas pa ON pa.aula_id = a.id AND pa.user_id = ${session.id}
       ORDER BY a.ordem ASC
-    `).all(session.id) as AulaRow[];
+    `;
+    const aulas = rows as AulaRow[];
 
     // Group by track
     const trilhas: Record<string, {

@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import bcryptjs from 'bcryptjs';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { seed } from '@/lib/seed';
 import { createToken } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const db = getDb();
-    seed();
+    await seed();
 
     const { username, password } = await req.json();
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+    if (!username || typeof username !== 'string' || !password || typeof password !== 'string') {
+      return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 400 });
+    }
+    if (username.length > 100 || password.length > 200) {
+      return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 400 });
+    }
+
+    const { rows } = await sql`SELECT * FROM users WHERE username = ${username}`;
+    const user = rows[0] as any;
     if (!user) {
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 });
     }
@@ -45,6 +53,7 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error: any) {
+    Sentry.captureException(error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
@@ -20,16 +20,16 @@ interface ProgressoRow {
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const aula = db.prepare('SELECT * FROM aulas WHERE id = ?').get(Number(id)) as AulaRow | undefined;
+    const { rows: aulaRows } = await sql`SELECT * FROM aulas WHERE id = ${Number(id)}`;
+    const aula = aulaRows[0] as AulaRow | undefined;
     if (!aula) {
       return NextResponse.json({ error: 'Aula não encontrada' }, { status: 404 });
     }
@@ -46,14 +46,15 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
     // Check if previous lessons are completed
     if (aula.numero > 1) {
-      const previousAulas = db.prepare(
-        'SELECT id FROM aulas WHERE trilha = ? AND numero < ? ORDER BY numero ASC'
-      ).all(aula.trilha, aula.numero) as { id: number }[];
+      const { rows: previousAulas } = await sql`
+        SELECT id FROM aulas WHERE trilha = ${aula.trilha} AND numero < ${aula.numero} ORDER BY numero ASC
+      `;
 
-      for (const prev of previousAulas) {
-        const progress = db.prepare(
-          'SELECT concluida FROM progresso_aulas WHERE user_id = ? AND aula_id = ?'
-        ).get(session.id, prev.id) as ProgressoRow | undefined;
+      for (const prev of previousAulas as { id: number }[]) {
+        const { rows: progressRows } = await sql`
+          SELECT concluida FROM progresso_aulas WHERE user_id = ${session.id} AND aula_id = ${prev.id}
+        `;
+        const progress = progressRows[0] as ProgressoRow | undefined;
 
         if (!progress || progress.concluida !== 1) {
           return NextResponse.json({ error: 'Complete as aulas anteriores primeiro' }, { status: 403 });
@@ -73,16 +74,16 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const db = getDb();
     const { id } = params;
 
-    const aula = db.prepare('SELECT * FROM aulas WHERE id = ?').get(Number(id)) as AulaRow | undefined;
+    const { rows: aulaRows } = await sql`SELECT * FROM aulas WHERE id = ${Number(id)}`;
+    const aula = aulaRows[0] as AulaRow | undefined;
     if (!aula) {
       return NextResponse.json({ error: 'Aula não encontrada' }, { status: 404 });
     }
@@ -107,21 +108,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const passed = score >= 2; // >= 2 out of 3
 
     // Save/update progress
-    const existing = db.prepare('SELECT * FROM progresso_aulas WHERE user_id = ? AND aula_id = ?').get(session.id, Number(id));
+    const { rows: existingRows } = await sql`SELECT * FROM progresso_aulas WHERE user_id = ${session.id} AND aula_id = ${Number(id)}`;
 
-    if (existing) {
-      db.prepare(`
+    if (existingRows[0]) {
+      await sql`
         UPDATE progresso_aulas SET
-          concluida = ?,
-          quiz_score = ?,
-          data_conclusao = ?
-        WHERE user_id = ? AND aula_id = ?
-      `).run(passed ? 1 : 0, score, passed ? new Date().toISOString().split('T')[0] : null, session.id, Number(id));
+          concluida = ${passed ? 1 : 0},
+          quiz_score = ${score},
+          data_conclusao = ${passed ? new Date().toISOString().split('T')[0] : null}
+        WHERE user_id = ${session.id} AND aula_id = ${Number(id)}
+      `;
     } else {
-      db.prepare(`
+      await sql`
         INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(session.id, Number(id), passed ? 1 : 0, score, passed ? new Date().toISOString().split('T')[0] : null);
+        VALUES (${session.id}, ${Number(id)}, ${passed ? 1 : 0}, ${score}, ${passed ? new Date().toISOString().split('T')[0] : null})
+      `;
     }
 
     return NextResponse.json({

@@ -5,7 +5,12 @@ import { useEffect, useState, useCallback } from 'react';
 interface Resultado {
   loja: string;
   preco: number;
-  link: string;
+  preco_original: number | null;
+  desconto_percent: number;
+  url: string;
+  link?: string;
+  imagem: string | null;
+  titulo: string;
   disponivel: boolean;
 }
 
@@ -64,6 +69,8 @@ export default function BuscasPage() {
   const [currentProduct, setCurrentProduct] = useState('');
   const [cardRec, setCardRec] = useState<CardRecommendation | null>(null);
   const [loadingCard, setLoadingCard] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<'real' | null>(null);
+  const [searchFonte, setSearchFonte] = useState('');
 
   const fetchBuscas = useCallback(async () => {
     setLoading(true);
@@ -89,6 +96,8 @@ export default function BuscasPage() {
     setSearching(true);
     setCurrentResults(null);
     setCardRec(null);
+    setSearchStatus(null);
+    setSearchFonte('');
     setCurrentProduct(searchTerm.trim());
     try {
       const res = await fetch('/api/buscas', {
@@ -100,6 +109,8 @@ export default function BuscasPage() {
       const busca = await res.json();
       const resultados: Resultado[] = JSON.parse(busca.resultados || '[]');
       setCurrentResults(resultados);
+      setSearchStatus(busca.status || 'real');
+      setSearchFonte(busca.fonte || '');
       setSavedBuscas((prev) => [busca, ...prev.filter((b) => b.id !== busca.id)]);
 
       // Fetch card recommendation for lowest price
@@ -261,16 +272,27 @@ export default function BuscasPage() {
             ))}
           </div>
           <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>Buscando precos para &quot;{currentProduct}&quot;...</p>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>Comparando em varias lojas</p>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>Buscando nas lojas... pode levar alguns segundos</p>
         </div>
       )}
 
       {/* Results */}
       {currentResults && !searching && (
         <div style={{ marginBottom: 32 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-            Resultados para &quot;{currentProduct}&quot;
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700 }}>
+              Resultados para &quot;{currentProduct}&quot;
+            </h3>
+            {searchStatus && (
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                background: '#E8F5E9',
+                color: '#2E7D32',
+              }}>
+                {`REAL - ${searchFonte}`}
+              </span>
+            )}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 24 }}>
             {currentResults.map((result, i) => {
               const isCheapest = result.disponivel && result.preco === minPrice;
@@ -302,9 +324,23 @@ export default function BuscasPage() {
                       Menor preco!
                     </div>
                   )}
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  {result.imagem && (
+                    <div style={{ width: '100%', height: 80, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={result.imagem} alt={result.titulo || result.loja} style={{ maxHeight: 80, maxWidth: '100%', objectFit: 'contain', borderRadius: 8 }} />
+                    </div>
+                  )}
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {result.titulo || result.loja}
+                  </p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
                     {result.loja}
                   </p>
+                  {result.preco_original && result.preco_original > result.preco && (
+                    <p style={{ fontSize: 12, color: '#999', textDecoration: 'line-through', marginBottom: 2 }}>
+                      {formatMoney(result.preco_original)}
+                      <span style={{ color: '#EF4444', fontWeight: 600, textDecoration: 'none', marginLeft: 6 }}>-{result.desconto_percent}%</span>
+                    </p>
+                  )}
                   <p
                     style={{
                       fontSize: 24,
@@ -320,7 +356,7 @@ export default function BuscasPage() {
                   )}
                   {result.disponivel && (
                     <a
-                      href={result.link}
+                      href={result.url || result.link}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -330,7 +366,7 @@ export default function BuscasPage() {
                         textDecoration: 'none',
                       }}
                     >
-                      Ver na loja →
+                      Ver oferta →
                     </a>
                   )}
                 </div>

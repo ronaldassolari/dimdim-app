@@ -27,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar user={user} />
-      <main className="main-content" style={{ flex: 1, marginLeft: 240, padding: '24px 32px', maxWidth: '100%', overflow: 'auto' }}>
+      <main role="main" className="main-content" style={{ flex: 1, marginLeft: 240, padding: '24px 32px', maxWidth: '100%', overflow: 'auto' }}>
         {children}
       </main>
     </div>

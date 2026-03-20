@@ -1,38 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
 export async function GET(request: NextRequest) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const mes = searchParams.get('mes');
+    const mes = searchParams.get('mes') || null;
 
-    const db = getDb();
-    let query = 'SELECT * FROM transacoes WHERE user_id = ?';
-    const params: (string | number)[] = [session.id];
+    const { rows } = await sql`
+      SELECT * FROM transacoes
+      WHERE user_id = ${session.id}
+      ORDER BY data DESC
+    `;
 
-    if (mes) {
-      query += ' AND data LIKE ?';
-      params.push(`${mes}%`);
-    }
-
-    query += ' ORDER BY data DESC';
-
-    const transacoes = db.prepare(query).all(...params) as Record<string, unknown>[];
+    const transacoes = mes
+      ? (rows as Record<string, any>[]).filter(t => (t.data as string || '').startsWith(mes))
+      : rows;
 
     const header = 'ID,Data,Descrição,Valor,Tipo,Categoria,Status,Cartão ID,Recorrente,Frequência,Observações\n';
-    const rows = transacoes.map((t) =>
+    const csvRows = (transacoes as Record<string, unknown>[]).map((t) =>
       `${t.id},"${t.data}","${t.descricao}",${t.valor},${t.tipo},"${t.categoria}",${t.status},${t.cartao_id || ''},${t.recorrente ? 'Sim' : 'Não'},"${t.frequencia || ''}","${t.observacoes || ''}"`
     ).join('\n');
 
-    const csv = header + rows;
+    const csv = header + csvRows;
 
     return new NextResponse(csv, {
       status: 200,

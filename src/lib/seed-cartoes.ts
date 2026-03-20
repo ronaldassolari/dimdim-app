@@ -1,4 +1,4 @@
-import getDb from './db';
+import { sql, initDb } from './db';
 
 interface CartaoCatalogo {
   banco: string;
@@ -339,31 +339,23 @@ const CATALOGO: CartaoCatalogo[] = [
   },
 ];
 
-export function seedCartoesCatalogo() {
-  const db = getDb();
+let catalogoSeeded = false;
 
-  // Check if already seeded
-  const count = (db.prepare('SELECT COUNT(*) as c FROM cartoes_catalogo').get() as any)?.c || 0;
-  if (count > 0) return;
+export async function seedCartoesCatalogo() {
+  if (catalogoSeeded) return;
+  await initDb();
 
-  const stmt = db.prepare(`
-    INSERT INTO cartoes_catalogo (banco, nome, bandeira, nivel, pontos_nacional, pontos_internacional, programas_compativeis, cashback_percent, anuidade, anuidade_condicao, renda_minima, sala_vip, sala_vip_detalhes, observacoes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const { rows } = await sql`SELECT COUNT(*) as c FROM cartoes_catalogo`;
+  if (Number(rows[0].c) > 0) {
+    catalogoSeeded = true;
+    return;
+  }
 
-  const insertAll = db.transaction(() => {
-    for (const c of CATALOGO) {
-      stmt.run(
-        c.banco, c.nome, c.bandeira, c.nivel,
-        c.pontos_nacional, c.pontos_internacional,
-        JSON.stringify(c.programas_compativeis),
-        c.cashback_percent, c.anuidade, c.anuidade_condicao,
-        c.renda_minima, c.sala_vip ? 1 : 0,
-        c.sala_vip_detalhes, c.observacoes
-      );
-    }
-  });
+  for (const c of CATALOGO) {
+    await sql`INSERT INTO cartoes_catalogo (banco, nome, bandeira, nivel, pontos_nacional, pontos_internacional, programas_compativeis, cashback_percent, anuidade, anuidade_condicao, renda_minima, sala_vip, sala_vip_detalhes, observacoes)
+      VALUES (${c.banco}, ${c.nome}, ${c.bandeira}, ${c.nivel}, ${c.pontos_nacional}, ${c.pontos_internacional}, ${JSON.stringify(c.programas_compativeis)}, ${c.cashback_percent}, ${c.anuidade}, ${c.anuidade_condicao}, ${c.renda_minima}, ${c.sala_vip ? 1 : 0}, ${c.sala_vip_detalhes}, ${c.observacoes})`;
+  }
 
-  insertAll();
+  catalogoSeeded = true;
   console.log(`✅ Catálogo de cartões: ${CATALOGO.length} cartões inseridos`);
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
+import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 
@@ -16,7 +16,7 @@ interface Cartao {
 
 export async function GET(request: NextRequest) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -30,21 +30,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Informe um valor válido' }, { status: 400 });
     }
 
-    const db = getDb();
     let cartoes: Cartao[];
     if (cartaoId) {
-      const c = db.prepare('SELECT * FROM cartoes WHERE id = ? AND user_id = ? AND ativo = 1').get(Number(cartaoId), session.id) as Cartao | undefined;
-      cartoes = c ? [c] : [];
+      const { rows } = await sql`SELECT * FROM cartoes WHERE id = ${Number(cartaoId)} AND user_id = ${session.id} AND ativo = 1`;
+      cartoes = rows as Cartao[];
     } else {
-      cartoes = db.prepare('SELECT * FROM cartoes WHERE user_id = ? AND ativo = 1').all(session.id) as Cartao[];
+      const { rows } = await sql`SELECT * FROM cartoes WHERE user_id = ${session.id} AND ativo = 1`;
+      cartoes = rows as Cartao[];
     }
 
     const ranking = cartoes.map((cartao) => {
-      const pontosGanhos = Math.round(valor * cartao.pontos_por_real);
+      const pontosGanhos = Math.round(valor * Number(cartao.pontos_por_real));
       const valorEquivalente = Number((pontosGanhos * 0.01).toFixed(2));
       return {
         cartao_id: cartao.id, apelido: cartao.apelido, banco: cartao.banco,
-        pontos_por_real: cartao.pontos_por_real, pontosGanhos, valorEquivalente,
+        pontos_por_real: Number(cartao.pontos_por_real), pontosGanhos, valorEquivalente,
       };
     }).sort((a, b) => b.pontosGanhos - a.pontosGanhos);
 
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    seed();
+    await seed();
     const session = getSession();
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -70,11 +70,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Informe um valor válido' }, { status: 400 });
     }
 
-    const db = getDb();
-    const cartoes = db.prepare('SELECT * FROM cartoes WHERE user_id = ? AND ativo = 1').all(session.id) as Cartao[];
+    const { rows } = await sql`SELECT * FROM cartoes WHERE user_id = ${session.id} AND ativo = 1`;
+    const cartoes = rows as Cartao[];
 
     const ranking = cartoes.map((cartao) => {
-      const pontosGanhos = Math.round(valor * cartao.pontos_por_real);
+      const pontosGanhos = Math.round(valor * Number(cartao.pontos_por_real));
       const valorEquivalente = Number((pontosGanhos * 0.01).toFixed(2));
 
       return {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
         bandeira: cartao.bandeira,
         nivel: cartao.nivel,
         cor: cartao.cor,
-        pontos_por_real: cartao.pontos_por_real,
+        pontos_por_real: Number(cartao.pontos_por_real),
         programas_pontos: JSON.parse(cartao.programas_pontos || '[]'),
         pontosGanhos,
         valorEquivalente,
