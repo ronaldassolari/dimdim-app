@@ -157,8 +157,8 @@ const EMPTY_FORM: FormData = {
 };
 
 const CATEGORIAS_META = [
-  'Viagens', 'Investimentos', 'Educacao', 'Moradia', 'Veiculo',
-  'Emergencia', 'Tecnologia', 'Saude', 'Outros',
+  'Viagens', 'Investimentos', 'Educação', 'Moradia', 'Veículo',
+  'Emergência', 'Tecnologia', 'Saúde', 'Outros',
 ];
 
 export default function MetasPage() {
@@ -693,7 +693,7 @@ export default function MetasPage() {
                           </p>
                         ) : meta.prazo && isComplete ? (
                           <p style={{ fontSize: 13, color: '#00C853', fontWeight: 600 }}>
-                            Concluida antes do prazo!
+                            Concluída antes do prazo!
                           </p>
                         ) : null}
                       </div>
