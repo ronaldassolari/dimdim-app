@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useToast } from '@/components/ToastContext';
 
 interface Aula {
   id: number;
@@ -11,6 +12,7 @@ interface Aula {
   quiz_score: number;
   acessivel: boolean;
   badge_nome: string | null;
+  data_conclusao: string | null;
 }
 
 interface Trilha {
@@ -43,6 +45,7 @@ const TRILHA_CONFIG: Record<string, { label: string; emoji: string; color: strin
 };
 
 export default function AcademiaPage() {
+  const toast = useToast();
   const [trilhas, setTrilhas] = useState<Record<string, Trilha>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,14 +84,14 @@ export default function AcademiaPage() {
       const res = await fetch(`/api/aulas/${aulaId}`);
       if (!res.ok) {
         const errData = await res.json();
-        alert(errData.error || 'Erro ao abrir aula');
+        toast.error(errData.error || 'Erro ao abrir aula');
         return;
       }
       const data = await res.json();
       setSelectedAula(data);
       setQuizAnswers(new Array(data.quiz?.length || 0).fill(null));
     } catch {
-      alert('Erro ao carregar aula.');
+      toast.error('Erro ao carregar aula.');
     } finally {
       setLoadingAula(false);
     }
@@ -97,7 +100,7 @@ export default function AcademiaPage() {
   const submitQuiz = async () => {
     if (!selectedAula) return;
     if (quizAnswers.some((a) => a === null)) {
-      alert('Responda todas as perguntas antes de enviar.');
+      toast.warning('Responda todas as perguntas antes de enviar.');
       return;
     }
     setSubmittingQuiz(true);
@@ -130,7 +133,7 @@ export default function AcademiaPage() {
         }
       }
     } catch {
-      alert('Erro ao enviar quiz.');
+      toast.error('Erro ao enviar quiz.');
     } finally {
       setSubmittingQuiz(false);
     }
@@ -170,6 +173,11 @@ export default function AcademiaPage() {
       if (lastAula.badge_nome) earnedBadges.push(lastAula.badge_nome);
     }
   });
+
+  // Overall stats
+  const totalAulas = Object.values(trilhas).reduce((sum, t) => sum + t.aulas.length, 0);
+  const totalConcluidas = Object.values(trilhas).reduce((sum, t) => sum + t.aulas.filter(a => a.concluida).length, 0);
+  const overallPct = totalAulas > 0 ? Math.round((totalConcluidas / totalAulas) * 100) : 0;
 
   if (loading) {
     return (
@@ -430,6 +438,7 @@ export default function AcademiaPage() {
         @keyframes badgePop { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
         @keyframes badgeSpin { 0% { transform: rotate(0deg) scale(0.5); } 50% { transform: rotate(180deg) scale(1.2); } 100% { transform: rotate(360deg) scale(1); } }
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        @keyframes completePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0,200,83,0.2); } 50% { box-shadow: 0 0 0 6px rgba(0,200,83,0.1); } }
       `}</style>
 
       {/* Header */}
@@ -442,6 +451,45 @@ export default function AcademiaPage() {
         </p>
       </div>
 
+      {/* Overall progress summary */}
+      {totalAulas > 0 && (
+        <div className="card" style={{ marginBottom: 24, padding: '20px 28px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 4 }}>
+                Progresso geral
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, height: 10, borderRadius: 5, background: '#F3F4F6', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${overallPct}%`,
+                    height: '100%',
+                    borderRadius: 5,
+                    background: 'linear-gradient(90deg, #7C3AED, #A78BFA)',
+                    transition: 'width 800ms ease',
+                  }} />
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', minWidth: 40 }}>
+                  {overallPct}%
+                </span>
+              </div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 22, fontWeight: 800, color: '#7C3AED' }}>{totalConcluidas}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Concluidas</p>
+            </div>
+            <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{totalAulas}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Total</p>
+            </div>
+            <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 22, fontWeight: 800, color: '#F59E0B' }}>{earnedBadges.length}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Badges</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Track cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 32 }}>
         {(['iniciante', 'moderado', 'avancado'] as const).map((key) => {
@@ -453,6 +501,7 @@ export default function AcademiaPage() {
           const pct = total > 0 ? (completed / total) * 100 : 0;
           const isExpanded = expandedTrilha === key;
           const isLocked = !trilha.acessivel;
+          const allComplete = completed === total && total > 0;
 
           return (
             <div key={key} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -467,8 +516,9 @@ export default function AcademiaPage() {
                   position: 'relative',
                   overflow: 'hidden',
                   opacity: isLocked ? 0.7 : 1,
-                  border: isExpanded ? `2px solid ${config.color}` : undefined,
+                  border: allComplete ? `2px solid ${config.color}` : isExpanded ? `2px solid ${config.color}` : undefined,
                   transition: 'all 200ms',
+                  animation: allComplete ? 'completePulse 3s ease infinite' : undefined,
                 }}
               >
                 {isLocked && (
@@ -483,6 +533,29 @@ export default function AcademiaPage() {
                     🔒
                   </div>
                 )}
+
+                {/* Completion badge */}
+                {allComplete && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 12,
+                      background: config.bg,
+                      color: config.color,
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    Completa!
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                   <div
                     style={{
@@ -496,7 +569,7 @@ export default function AcademiaPage() {
                       fontSize: 26,
                     }}
                   >
-                    {config.emoji}
+                    {allComplete ? '🏆' : config.emoji}
                   </div>
                   <div>
                     <h3 style={{ fontSize: 18, fontWeight: 800, color: config.color }}>{config.label}</h3>
@@ -519,8 +592,13 @@ export default function AcademiaPage() {
                   />
                 </div>
 
+                {/* Progress text */}
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, textAlign: 'right', fontWeight: 600 }}>
+                  {Math.round(pct)}%
+                </p>
+
                 {isLocked && (
-                  <div style={{ marginTop: 16, textAlign: 'center' }}>
+                  <div style={{ marginTop: 8, textAlign: 'center' }}>
                     <a
                       href="/configuracoes"
                       style={{
@@ -586,7 +664,15 @@ export default function AcademiaPage() {
                         >
                           {isDone ? '✓' : isAulaLocked ? '🔒' : aula.numero}
                         </div>
-                        <span style={{ fontWeight: isCurrent ? 700 : 500, flex: 1 }}>{aula.titulo}</span>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontWeight: isCurrent ? 700 : 500, display: 'block' }}>{aula.titulo}</span>
+                          {isDone && aula.data_conclusao && (
+                            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginTop: 2 }}>
+                              Concluida em {new Date(aula.data_conclusao + 'T00:00:00').toLocaleDateString('pt-BR')}
+                              {aula.quiz_score > 0 && ` - Quiz: ${aula.quiz_score}/3`}
+                            </span>
+                          )}
+                        </div>
                         {isDone && <span style={{ fontSize: 12, color: config.color, fontWeight: 600 }}>Concluida</span>}
                         {isCurrent && <span style={{ fontSize: 12, color: config.color, fontWeight: 700 }}>Iniciar →</span>}
                       </button>

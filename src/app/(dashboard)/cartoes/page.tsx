@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Modal from '@/components/Modal';
+import { useToast } from '@/components/ToastContext';
 
 interface Cartao {
   id: number;
@@ -16,6 +17,16 @@ interface Cartao {
   pontos_por_real: number;
   programas_pontos: string;
   ativo: number;
+}
+
+interface Transacao {
+  id: number;
+  descricao: string;
+  valor: number;
+  tipo: 'GASTO' | 'RECEITA';
+  categoria: string;
+  status: string;
+  data: string;
 }
 
 const BANCOS = [
@@ -34,6 +45,18 @@ const PROGRAMAS_PONTOS = [
   'Livelo', 'Smiles', 'Latam Pass', 'TudoAzul', 'Dotz', 'Esfera',
   'Stix', 'Elo Mais', 'Rappi', 'Cashback', 'Nenhum',
 ];
+
+const BANDEIRA_ICONS: Record<string, string> = {
+  'Visa': '💳', 'Mastercard': '🔴', 'Elo': '🟡', 'Amex': '🔵',
+  'Hipercard': '🟠', 'Diners Club': '⚪',
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  'Alimentação': '🍔', 'Transporte': '🚗', 'Saúde': '💊', 'Educação': '📚',
+  'Lazer': '🎮', 'Moradia': '🏠', 'Roupas': '👕', 'Eletrônicos': '📱',
+  'Serviços': '🔧', 'Investimentos': '📈', 'Salário': '💰', 'Freelance': '💻',
+  'Outros': '📦', 'Assinatura': '📺', 'Combustível': '⛽',
+};
 
 function formatMoney(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -69,6 +92,15 @@ function daysUntilVencimento(vencimento: number): number {
   }
   return Math.ceil((thisMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// Estimate R$ value of points (average ~0.02 R$ per point)
+const POINT_VALUE_BRL = 0.02;
 
 interface CatalogoCartao {
   id: number;
@@ -186,7 +218,401 @@ function CardPreview({ form }: { form: FormData }) {
   );
 }
 
+// ====== Card Detail Drawer ======
+function CardDetailDrawer({
+  cartao,
+  open,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  cartao: Cartao | null;
+  open: boolean;
+  onClose: () => void;
+  onEdit: (c: Cartao) => void;
+  onDelete: (c: Cartao) => void;
+}) {
+  const [transactions, setTransactions] = useState<Transacao[]>([]);
+  const [loadingTx, setLoadingTx] = useState(false);
+  const [simulateValue, setSimulateValue] = useState('');
+
+  // Fetch last 5 transactions for this card
+  useEffect(() => {
+    if (!cartao || !open) { setTransactions([]); return; }
+    let cancelled = false;
+    setLoadingTx(true);
+    fetch(`/api/transacoes?cartao_id=${cartao.id}&limit=5`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        const txList = Array.isArray(data) ? data : (data?.transacoes || []);
+        setTransactions(txList.slice(0, 5));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingTx(false); });
+    return () => { cancelled = true; };
+  }, [cartao, open]);
+
+  // Reset simulator on card change
+  useEffect(() => {
+    setSimulateValue('');
+  }, [cartao?.id]);
+
+  // Lock body scroll when open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  if (!cartao) return null;
+
+  const programas: string[] = (() => {
+    try { return JSON.parse(cartao.programas_pontos || '[]'); } catch { return []; }
+  })();
+  const gastoPercent = cartao.limite > 0 ? (cartao.gasto_mes / cartao.limite) * 100 : 0;
+  const barColor = gastoPercent < 60 ? '#00C853' : gastoPercent < 80 ? '#F59E0B' : '#EF4444';
+  const diasVencimento = daysUntilVencimento(cartao.vencimento);
+
+  // Points calculation
+  const accumulatedPoints = Math.round(cartao.gasto_mes * cartao.pontos_por_real);
+  const accumulatedPointsValue = accumulatedPoints * POINT_VALUE_BRL;
+
+  // Simulator
+  const simulateAmount = parseInputMoney(simulateValue);
+  const simulatedPoints = Math.round(simulateAmount * cartao.pontos_por_real);
+  const simulatedPointsValue = simulatedPoints * POINT_VALUE_BRL;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(2px)',
+          zIndex: 49,
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? 'auto' : 'none',
+          transition: 'opacity 300ms ease',
+        }}
+      />
+
+      {/* Drawer */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          height: '100%',
+          width: 400,
+          maxWidth: '100vw',
+          background: 'white',
+          boxShadow: '-4px 0 30px rgba(0,0,0,0.12)',
+          transform: open ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 300ms ease',
+          zIndex: 50,
+          display: 'flex',
+          flexDirection: 'column',
+          overflowY: 'auto',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '20px 24px',
+            borderBottom: '1px solid var(--border)',
+            position: 'sticky',
+            top: 0,
+            background: 'white',
+            zIndex: 1,
+          }}
+        >
+          <h2 style={{ fontSize: 18, fontWeight: 700 }}>Detalhes do Cartão</h2>
+          <button
+            onClick={onClose}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              border: 'none',
+              background: 'var(--bg)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 18,
+              color: 'var(--text-secondary)',
+              transition: 'all 200ms ease',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#FFEBEE')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg)')}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Card visual header */}
+          <div
+            style={{
+              borderRadius: 16,
+              background: `linear-gradient(135deg, ${cartao.cor} 0%, ${cartao.cor}CC 100%)`,
+              color: 'white',
+              padding: '24px',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ position: 'absolute', top: -30, right: -30, width: 100, height: 100, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
+            <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.8, marginBottom: 2 }}>{cartao.banco}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>{cartao.apelido}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                {BANDEIRA_ICONS[cartao.bandeira] || '💳'} {cartao.bandeira}
+              </span>
+              <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600 }}>
+                {cartao.nivel}
+              </span>
+            </div>
+          </div>
+
+          {/* Limit bar */}
+          <div style={{ background: 'var(--bg)', borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Limite utilizado</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{Math.round(gastoPercent)}%</span>
+            </div>
+            <div style={{ width: '100%', height: 10, background: '#E5E7EB', borderRadius: 5, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ width: `${Math.min(gastoPercent, 100)}%`, height: '100%', background: barColor, borderRadius: 5, transition: 'width 600ms ease' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span>{formatMoney(cartao.gasto_mes)} gasto</span>
+              <span>{formatMoney(cartao.limite)} limite</span>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#00C853', marginTop: 8 }}>
+              {formatMoney(Math.max(0, cartao.limite - cartao.gasto_mes))} disponível
+            </div>
+          </div>
+
+          {/* Due date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: diasVencimento <= 5 ? '#FEF2F2' : 'var(--bg)', borderRadius: 14, padding: 16 }}>
+            <span style={{ fontSize: 28 }}>📅</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: diasVencimento <= 5 ? '#EF4444' : 'var(--text)' }}>
+                Vence em {diasVencimento} {diasVencimento === 1 ? 'dia' : 'dias'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Todo dia {cartao.vencimento}
+              </div>
+            </div>
+          </div>
+
+          {/* Points info */}
+          <div style={{ background: '#F3E8FF', borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 22 }}>⭐</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#7C3AED' }}>
+                  {accumulatedPoints.toLocaleString('pt-BR')} pontos acumulados
+                </div>
+                <div style={{ fontSize: 12, color: '#7C3AED', opacity: 0.7 }}>
+                  Valor estimado: ~{formatMoney(accumulatedPointsValue)}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: '#7C3AED', opacity: 0.8 }}>
+              Taxa: {cartao.pontos_por_real} pts/R$ gasto
+            </div>
+            {programas.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {programas.map(p => (
+                  <span key={p} style={{ background: 'rgba(124,58,237,0.15)', color: '#7C3AED', padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600 }}>
+                    {p}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Points simulator */}
+          <div style={{ background: '#FFFBEB', borderRadius: 14, padding: 16, border: '1px solid #FDE68A' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              🧮 Simulador de Pontos
+            </div>
+            <div style={{ position: 'relative', marginBottom: 10 }}>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#92400E', fontWeight: 600, pointerEvents: 'none' }}>R$</span>
+              <input
+                type="text"
+                placeholder="0,00"
+                value={simulateValue}
+                onChange={e => setSimulateValue(formatInputMoney(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px 10px 40px',
+                  borderRadius: 10,
+                  border: '1.5px solid #FDE68A',
+                  fontSize: 14,
+                  fontFamily: "'Inter', sans-serif",
+                  outline: 'none',
+                  background: 'white',
+                  transition: 'all 200ms ease',
+                }}
+                onFocus={e => (e.currentTarget.style.borderColor = '#F59E0B')}
+                onBlur={e => (e.currentTarget.style.borderColor = '#FDE68A')}
+              />
+            </div>
+            {simulateAmount > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 13, color: '#92400E' }}>
+                  Você ganharia <strong>{simulatedPoints.toLocaleString('pt-BR')} pontos</strong> = <strong>{formatMoney(simulatedPointsValue)}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: '#B45309', background: 'rgba(245,158,11,0.1)', padding: '6px 10px', borderRadius: 8 }}>
+                  Com este cartão você economizaria {formatMoney(simulatedPointsValue)} nesta compra
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Last 5 transactions */}
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              📋 Últimas transações neste cartão
+            </div>
+            {loadingTx ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[1, 2, 3].map(i => (
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: 10, borderRadius: 10, background: 'var(--bg)' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: '#E5E7EB', animation: 'shimmer 1.5s infinite', backgroundSize: '200% 100%', backgroundImage: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)' }} />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ height: 12, borderRadius: 4, width: '60%', background: '#E5E7EB', animation: 'shimmer 1.5s infinite', backgroundSize: '200% 100%', backgroundImage: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)' }} />
+                      <div style={{ height: 10, borderRadius: 4, width: '40%', background: '#E5E7EB', animation: 'shimmer 1.5s infinite', backgroundSize: '200% 100%', backgroundImage: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : transactions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-secondary)', fontSize: 13, background: 'var(--bg)', borderRadius: 12 }}>
+                Nenhuma transação encontrada neste cartão
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {transactions.map(tx => (
+                  <div
+                    key={tx.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: 'var(--bg)',
+                      transition: 'all 200ms ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: tx.tipo === 'RECEITA' ? '#E8F5E9' : '#FFEBEE',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 14,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {CATEGORY_ICONS[tx.categoria] || '📦'}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tx.descricao}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{formatDate(tx.data)}</div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: tx.tipo === 'RECEITA' ? '#00C853' : '#EF4444', flexShrink: 0 }}>
+                      {tx.tipo === 'RECEITA' ? '+' : '-'}{formatMoney(tx.valor)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8, paddingTop: 16, borderTop: '1px solid #F3F4F6' }}>
+            <button
+              onClick={() => { onClose(); onEdit(cartao); }}
+              style={{
+                flex: 1,
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: '1.5px solid var(--border)',
+                background: 'white',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 200ms ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              ✏️ Editar
+            </button>
+            <button
+              onClick={() => { onClose(); onDelete(cartao); }}
+              style={{
+                padding: '12px 20px',
+                borderRadius: 12,
+                border: '1.5px solid #FCA5A5',
+                background: 'white',
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#EF4444',
+                cursor: 'pointer',
+                transition: 'all 200ms ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              🗑 Excluir
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+    </>
+  );
+}
+
+// ====== Main Page ======
 export default function CartoesPage() {
+  const toast = useToast();
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -202,6 +628,10 @@ export default function CartoesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Cartao | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [editError, setEditError] = useState('');
+
+  // Drawer state
+  const [drawerCartao, setDrawerCartao] = useState<Cartao | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -369,10 +799,11 @@ export default function CartoesPage() {
         setCartoes(prev => prev.map(c => c.id === editingCartao.id ? { ...c, ...updated } : c));
       }
 
+      toast.success(editingCartao ? 'Cartao atualizado!' : 'Cartao adicionado!');
       closeModal();
       fetchCartoes();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao salvar cartão';
+      const message = err instanceof Error ? err.message : 'Erro ao salvar cartao';
       setEditError(message);
     } finally {
       setSaving(false);
@@ -385,17 +816,29 @@ export default function CartoesPage() {
     try {
       const res = await fetch(`/api/cartoes/${deleteConfirm.id}`, { method: 'DELETE' });
       if (!res.ok && res.status !== 204) {
-        throw new Error('Erro ao excluir cartão');
+        throw new Error('Erro ao excluir cartao');
       }
       // Remove from local state
       setCartoes(prev => prev.filter(c => c.id !== deleteConfirm.id));
       setDeleteConfirm(null);
+      toast.success('Cartao removido!');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao excluir';
-      alert(message);
+      toast.error(message);
     } finally {
       setDeleteLoading(false);
     }
+  };
+
+  const openDrawer = (cartao: Cartao) => {
+    setDrawerCartao(cartao);
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    // Delay clearing cartao so exit animation plays
+    setTimeout(() => setDrawerCartao(null), 300);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -471,11 +914,13 @@ export default function CartoesPage() {
             return (
               <div
                 key={cartao.id}
+                onClick={() => openDrawer(cartao)}
                 style={{
                   borderRadius: 20,
                   overflow: 'hidden',
                   boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
                   transition: 'all 300ms ease',
+                  cursor: 'pointer',
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.transform = 'translateY(-4px)';
@@ -652,6 +1097,15 @@ export default function CartoesPage() {
           })}
         </div>
       )}
+
+      {/* Card Detail Drawer */}
+      <CardDetailDrawer
+        cartao={drawerCartao}
+        open={drawerOpen}
+        onClose={closeDrawer}
+        onEdit={(c) => openModal(c)}
+        onDelete={(c) => setDeleteConfirm(c)}
+      />
 
       {/* Add Card Modal */}
       <Modal isOpen={modalOpen} onClose={closeModal} title={editingCartao ? 'Editar Cartão' : 'Adicionar Cartão'}>

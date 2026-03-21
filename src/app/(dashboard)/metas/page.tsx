@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Modal from '@/components/Modal';
 import confetti from 'canvas-confetti';
+import { useToast } from '@/components/ToastContext';
 
 interface Meta {
   id: number;
@@ -39,6 +40,14 @@ function parseInputMoney(formatted: string): number {
   return isNaN(val) ? 0 : val;
 }
 
+function daysUntil(dateStr: string): number {
+  const target = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const diffMs = target.getTime() - now.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
 function monthsUntil(dateStr: string): number {
   const target = new Date(dateStr + 'T00:00:00');
   const now = new Date();
@@ -47,13 +56,36 @@ function monthsUntil(dateStr: string): number {
   return Math.max(1, Math.ceil(months));
 }
 
-function CircularProgress({ progress, size = 140 }: { progress: number; size?: number }) {
+function CircularProgress({ progress, size = 140, animate = true }: { progress: number; size?: number; animate?: boolean }) {
+  const [animatedProgress, setAnimatedProgress] = useState(0);
   const r = (size / 2) - 10;
   const circumference = 2 * Math.PI * r;
-  const p = Math.min(progress, 1);
+  const p = Math.min(animate ? animatedProgress : progress, 1);
   const offset = circumference * (1 - p);
 
-  const color = p >= 1 ? '#00C853' : p >= 0.6 ? '#00C853' : p >= 0.3 ? '#F59E0B' : '#7C3AED';
+  // Color thresholds: <25% red, 25-75% yellow, >75% green
+  const color = p >= 1 ? '#00C853' : p > 0.75 ? '#00C853' : p >= 0.25 ? '#F59E0B' : '#EF4444';
+
+  useEffect(() => {
+    if (!animate) return;
+    // Animate from 0 to target
+    setAnimatedProgress(0);
+    const target = Math.min(progress, 1);
+    const duration = 1200; // ms
+    const startTime = performance.now();
+
+    function tick(now: number) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - t, 3);
+      setAnimatedProgress(target * eased);
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      }
+    }
+    requestAnimationFrame(tick);
+  }, [progress, animate]);
 
   return (
     <svg width={size} height={size}>
@@ -76,7 +108,7 @@ function CircularProgress({ progress, size = 140 }: { progress: number; size?: n
         strokeDashoffset={offset}
         strokeLinecap="round"
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: 'stroke-dashoffset 800ms ease' }}
+        style={{ transition: 'stroke 400ms ease' }}
       />
       <text
         x={size / 2}
@@ -85,7 +117,7 @@ function CircularProgress({ progress, size = 140 }: { progress: number; size?: n
         dominantBaseline="middle"
         fontSize="24"
         fontWeight="800"
-        fill="#1A1A2E"
+        fill={color}
       >
         {Math.round(p * 100)}%
       </text>
@@ -125,11 +157,12 @@ const EMPTY_FORM: FormData = {
 };
 
 const CATEGORIAS_META = [
-  'Viagens', 'Investimentos', 'Educação', 'Moradia', 'Veículo',
-  'Emergência', 'Tecnologia', 'Saúde', 'Outros',
+  'Viagens', 'Investimentos', 'Educacao', 'Moradia', 'Veiculo',
+  'Emergencia', 'Tecnologia', 'Saude', 'Outros',
 ];
 
 export default function MetasPage() {
+  const toast = useToast();
   const [metas, setMetas] = useState<Meta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -144,6 +177,9 @@ export default function MetasPage() {
   // Badge data
   const [badges, setBadges] = useState<Badge[]>([]);
 
+  // Track achieved metas for confetti
+  const previousMetasRef = useRef<Meta[]>([]);
+
   const fetchMetas = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -151,7 +187,15 @@ export default function MetasPage() {
       const res = await fetch('/api/metas');
       if (!res.ok) throw new Error('Erro ao carregar metas');
       const data = await res.json();
-      setMetas(Array.isArray(data) ? data : []);
+      const metasArray = Array.isArray(data) ? data : [];
+      // Ensure numeric types
+      const parsed = metasArray.map((m: Meta) => ({
+        ...m,
+        valor_alvo: Number(m.valor_alvo),
+        valor_atual: Number(m.valor_atual),
+        ativa: Number(m.ativa),
+      }));
+      setMetas(parsed);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
       setError(message);
@@ -179,8 +223,8 @@ export default function MetasPage() {
       if (txRes.ok) {
         const txData = await txRes.json();
         const txs = Array.isArray(txData) ? txData : [];
-        receitas = txs.filter((t: { tipo: string }) => t.tipo === 'RECEITA').reduce((sum: number, t: { valor: number }) => sum + t.valor, 0);
-        gastos = txs.filter((t: { tipo: string }) => t.tipo === 'GASTO').reduce((sum: number, t: { valor: number }) => sum + t.valor, 0);
+        receitas = txs.filter((t: { tipo: string }) => t.tipo === 'RECEITA').reduce((sum: number, t: { valor: number }) => sum + Number(t.valor), 0);
+        gastos = txs.filter((t: { tipo: string }) => t.tipo === 'GASTO').reduce((sum: number, t: { valor: number }) => sum + Number(t.valor), 0);
         hasAPagar = txs.some((t: { status: string }) => t.status === 'A_PAGAR');
       }
 
@@ -192,13 +236,18 @@ export default function MetasPage() {
       if (pontosRes.ok) {
         const pData = await pontosRes.json();
         const progs = Array.isArray(pData) ? pData : [];
-        numPontos = progs.filter((p: { saldo: number | null }) => p.saldo !== null && p.saldo > 0).length;
+        numPontos = progs.filter((p: { saldo: number | null }) => p.saldo !== null && Number(p.saldo) > 0).length;
       }
 
       if (aulasRes.ok) {
         const aData = await aulasRes.json();
-        if (aData && Array.isArray(aData.aulas)) {
-          lessonsDone = aData.aulas.filter((a: { concluida: number }) => a.concluida === 1).length;
+        // aulas endpoint returns object with trilhas, each having aulas array
+        if (aData && typeof aData === 'object') {
+          for (const trilha of Object.values(aData) as { aulas: { concluida: boolean }[] }[]) {
+            if (trilha.aulas) {
+              lessonsDone += trilha.aulas.filter((a) => a.concluida).length;
+            }
+          }
         }
       }
 
@@ -207,13 +256,13 @@ export default function MetasPage() {
 
       const badgeList: Badge[] = [
         {
-          nome: 'Poupador do Mês',
+          nome: 'Poupador do Mes',
           descricao: 'Poupou mais de 20% da renda',
           icone: '💰',
           earned: savedPercent > 20,
         },
         {
-          nome: 'Zero Dívidas',
+          nome: 'Zero Dividas',
           descricao: 'Nenhuma conta a pagar pendente',
           icone: '🎉',
           earned: !hasAPagar,
@@ -226,13 +275,13 @@ export default function MetasPage() {
         },
         {
           nome: 'Aluno Dedicado',
-          descricao: '3 ou mais aulas concluídas',
+          descricao: '3 ou mais aulas concluidas',
           icone: '📚',
           earned: lessonsDone >= 3,
         },
         {
-          nome: 'Cartão Master',
-          descricao: '3 ou mais cartões cadastrados',
+          nome: 'Cartao Master',
+          descricao: '3 ou mais cartoes cadastrados',
           icone: '💳',
           earned: numCartoes >= 3,
         },
@@ -260,6 +309,26 @@ export default function MetasPage() {
     }
   }, [loading, metas, computeBadges]);
 
+  // Check if any meta just achieved 100% and fire confetti
+  useEffect(() => {
+    const prev = previousMetasRef.current;
+    if (prev.length > 0 && metas.length > 0) {
+      for (const meta of metas) {
+        if (meta.valor_alvo > 0 && meta.valor_atual >= meta.valor_alvo) {
+          const prevMeta = prev.find(m => m.id === meta.id);
+          if (prevMeta && prevMeta.valor_atual < prevMeta.valor_alvo) {
+            // This meta just reached 100%!
+            setTimeout(() => {
+              confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+              confetti({ particleCount: 80, spread: 120, origin: { y: 0.4 } });
+            }, 400);
+          }
+        }
+      }
+    }
+    previousMetasRef.current = metas;
+  }, [metas]);
+
   const openModal = () => {
     setFormData(EMPTY_FORM);
     setModalOpen(true);
@@ -274,10 +343,13 @@ export default function MetasPage() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const [deleteMetaConfirm, setDeleteMetaConfirm] = useState<number | null>(null);
+  const [deleteMetaLoading, setDeleteMetaLoading] = useState(false);
+
   const handleSave = async () => {
-    if (!formData.titulo.trim()) { alert('Preencha o título'); return; }
+    if (!formData.titulo.trim()) { toast.warning('Preencha o titulo'); return; }
     const valorAlvo = parseInputMoney(formData.valorAlvoDisplay);
-    if (valorAlvo <= 0) { alert('Preencha o valor alvo'); return; }
+    if (valorAlvo <= 0) { toast.warning('Preencha o valor alvo'); return; }
 
     setSaving(true);
     try {
@@ -300,11 +372,12 @@ export default function MetasPage() {
         throw new Error(err.error || 'Erro ao salvar');
       }
 
+      toast.success('Meta criada!');
       closeModal();
       fetchMetas();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao salvar meta';
-      alert(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -312,10 +385,9 @@ export default function MetasPage() {
 
   const handleUpdateProgress = async (meta: Meta) => {
     const addValue = parseInputMoney(addValueDisplay);
-    if (addValue <= 0) { alert('Informe um valor'); return; }
+    if (addValue <= 0) { toast.warning('Informe um valor'); return; }
 
     const newValue = meta.valor_atual + addValue;
-    const wasBelow = meta.valor_atual < meta.valor_alvo;
 
     try {
       const res = await fetch(`/api/metas/${meta.id}`, {
@@ -326,18 +398,34 @@ export default function MetasPage() {
 
       if (!res.ok) throw new Error('Erro ao atualizar');
 
+      // Optimistic update for instant feedback
+      setMetas(prev => prev.map(m =>
+        m.id === meta.id ? { ...m, valor_atual: newValue } : m
+      ));
+
       setUpdatingId(null);
       setAddValueDisplay('');
-      fetchMetas();
+      toast.success('Progresso atualizado!');
 
-      // Trigger confetti if just reached 100%
-      if (wasBelow && newValue >= meta.valor_alvo) {
-        setTimeout(() => {
-          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        }, 300);
-      }
+      // Also re-fetch to ensure consistency
+      fetchMetas();
     } catch {
-      alert('Erro ao atualizar progresso');
+      toast.error('Erro ao atualizar progresso');
+    }
+  };
+
+  const handleDeleteMeta = async (id: number) => {
+    setDeleteMetaLoading(true);
+    try {
+      const res = await fetch(`/api/metas/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Erro ao excluir');
+      toast.success('Meta excluida!');
+      setDeleteMetaConfirm(null);
+      fetchMetas();
+    } catch {
+      toast.error('Erro ao excluir meta');
+    } finally {
+      setDeleteMetaLoading(false);
     }
   };
 
@@ -361,12 +449,27 @@ export default function MetasPage() {
     display: 'block',
   };
 
+  // Summary stats
+  const totalMetas = metas.length;
+  const metasAtingidas = metas.filter(m => m.valor_alvo > 0 && m.valor_atual >= m.valor_alvo).length;
+  const totalAlvo = metas.reduce((sum, m) => sum + m.valor_alvo, 0);
+  const totalAtual = metas.reduce((sum, m) => sum + Math.min(m.valor_atual, m.valor_alvo), 0);
+  const overallProgress = totalAlvo > 0 ? totalAtual / totalAlvo : 0;
+
   return (
     <div className="fade-in">
       <style>{`
         @keyframes shimmer {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
+        }
+        @keyframes pulseGlow {
+          0%, 100% { box-shadow: 0 0 8px rgba(0, 200, 83, 0.3); }
+          50% { box-shadow: 0 0 20px rgba(0, 200, 83, 0.6); }
+        }
+        @keyframes celebrateBounce {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
         }
       `}</style>
 
@@ -383,6 +486,7 @@ export default function MetasPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
           <Skeleton width="100%" height={320} />
           <Skeleton width="100%" height={320} />
+          <Skeleton width="100%" height={320} />
         </div>
       ) : error ? (
         <div className="card" style={{ textAlign: 'center', padding: 48 }}>
@@ -393,6 +497,45 @@ export default function MetasPage() {
         </div>
       ) : (
         <>
+          {/* Summary bar */}
+          {metas.length > 0 && (
+            <div className="card" style={{ marginBottom: 24, padding: '20px 28px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 4 }}>
+                    Progresso geral
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1, height: 10, borderRadius: 5, background: '#F3F4F6', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${Math.round(overallProgress * 100)}%`,
+                        height: '100%',
+                        borderRadius: 5,
+                        background: overallProgress > 0.75 ? 'linear-gradient(90deg, #00C853, #69F0AE)' : overallProgress >= 0.25 ? 'linear-gradient(90deg, #F59E0B, #FCD34D)' : 'linear-gradient(90deg, #EF4444, #FCA5A5)',
+                        transition: 'width 800ms ease',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', minWidth: 40 }}>
+                      {Math.round(overallProgress * 100)}%
+                    </span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--purple)' }}>{totalMetas}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Metas</p>
+                </div>
+                <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 22, fontWeight: 800, color: '#00C853' }}>{metasAtingidas}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Atingidas</p>
+                </div>
+                <div style={{ textAlign: 'center', padding: '0 16px', borderLeft: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{formatMoney(totalAtual)}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>de {formatMoney(totalAlvo)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Goals grid */}
           {metas.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: 48, marginBottom: 32 }}>
@@ -409,9 +552,11 @@ export default function MetasPage() {
                 const progress = meta.valor_alvo > 0 ? meta.valor_atual / meta.valor_alvo : 0;
                 const isComplete = progress >= 1;
                 const isUpdating = updatingId === meta.id;
+                const remaining = Math.max(0, meta.valor_alvo - meta.valor_atual);
+                const days = meta.prazo ? daysUntil(meta.prazo) : null;
                 const monthsLeft = meta.prazo ? monthsUntil(meta.prazo) : null;
-                const monthlyNeeded = monthsLeft && meta.valor_alvo > meta.valor_atual
-                  ? (meta.valor_alvo - meta.valor_atual) / monthsLeft
+                const monthlyNeeded = monthsLeft && remaining > 0
+                  ? remaining / monthsLeft
                   : 0;
 
                 return (
@@ -423,16 +568,47 @@ export default function MetasPage() {
                       textAlign: 'center',
                       transition: 'all 300ms ease',
                       border: isComplete ? '2px solid #00C853' : undefined,
+                      animation: isComplete ? 'pulseGlow 3s ease infinite' : undefined,
+                      position: 'relative',
                     }}
                     onMouseEnter={e => {
                       e.currentTarget.style.transform = 'translateY(-4px)';
-                      e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.12)';
+                      e.currentTarget.style.boxShadow = isComplete
+                        ? '0 8px 32px rgba(0,200,83,0.2)'
+                        : '0 8px 32px rgba(0,0,0,0.12)';
                     }}
                     onMouseLeave={e => {
                       e.currentTarget.style.transform = 'translateY(0)';
                       e.currentTarget.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
                     }}
                   >
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteMetaConfirm(meta.id); }}
+                      style={{
+                        position: 'absolute',
+                        top: 12,
+                        right: 12,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'white',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--text-secondary)',
+                        transition: 'all 200ms',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#FFEBEE'; e.currentTarget.style.color = '#EF4444'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                      title="Excluir meta"
+                    >
+                      x
+                    </button>
+
                     {isComplete && (
                       <div style={{
                         background: '#E8F5E9',
@@ -441,8 +617,11 @@ export default function MetasPage() {
                         borderRadius: 20,
                         fontSize: 12,
                         fontWeight: 700,
-                        display: 'inline-block',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
                         marginBottom: 16,
+                        animation: 'celebrateBounce 2s ease infinite',
                       }}>
                         Meta Atingida!
                       </div>
@@ -468,22 +647,59 @@ export default function MetasPage() {
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                      <CircularProgress progress={progress} size={140} />
+                      <CircularProgress progress={progress} size={140} animate={true} />
                     </div>
 
-                    <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+                    <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
                       <span style={{ color: 'var(--purple)' }}>{formatMoney(meta.valor_atual)}</span>
                       {' '}de{' '}
                       <span style={{ color: 'var(--text)' }}>{formatMoney(meta.valor_alvo)}</span>
                     </p>
 
-                    {meta.prazo && (
-                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                        Prazo: {new Date(meta.prazo + 'T00:00:00').toLocaleDateString('pt-BR')}
+                    {/* Remaining amount */}
+                    {!isComplete && remaining > 0 && (
+                      <p style={{
+                        fontSize: 13,
+                        color: '#EF4444',
+                        fontWeight: 600,
+                        marginBottom: 8,
+                      }}>
+                        Faltam {formatMoney(remaining)} para atingir a meta
                       </p>
                     )}
 
-                    {/* IA suggestion */}
+                    {/* Deadline countdown */}
+                    {meta.prazo && (
+                      <div style={{ marginBottom: 8 }}>
+                        {days !== null && days > 0 ? (
+                          <p style={{
+                            fontSize: 13,
+                            color: days <= 30 ? '#EF4444' : days <= 90 ? '#F59E0B' : 'var(--text-secondary)',
+                            fontWeight: 600,
+                          }}>
+                            {isComplete ? (
+                              <>Prazo: {new Date(meta.prazo + 'T00:00:00').toLocaleDateString('pt-BR')}</>
+                            ) : (
+                              <>Vence em {days} dia{days !== 1 ? 's' : ''}</>
+                            )}
+                          </p>
+                        ) : days !== null && days <= 0 && !isComplete ? (
+                          <p style={{
+                            fontSize: 13,
+                            color: '#EF4444',
+                            fontWeight: 700,
+                          }}>
+                            Prazo vencido!
+                          </p>
+                        ) : meta.prazo && isComplete ? (
+                          <p style={{ fontSize: 13, color: '#00C853', fontWeight: 600 }}>
+                            Concluida antes do prazo!
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Monthly suggestion */}
                     {!isComplete && monthlyNeeded > 0 && (
                       <div
                         style={{
@@ -496,7 +712,7 @@ export default function MetasPage() {
                           lineHeight: 1.5,
                         }}
                       >
-                        Guarde {formatMoney(monthlyNeeded)}/mês para atingir no prazo
+                        Guarde {formatMoney(monthlyNeeded)}/mes para atingir no prazo
                       </div>
                     )}
 
@@ -633,9 +849,9 @@ export default function MetasPage() {
       {/* Add Goal Modal */}
       <Modal isOpen={modalOpen} onClose={closeModal} title="Nova Meta">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Título */}
+          {/* Titulo */}
           <div>
-            <label style={labelStyle}>Título</label>
+            <label style={labelStyle}>Titulo</label>
             <input
               style={inputStyle}
               type="text"
@@ -732,6 +948,50 @@ export default function MetasPage() {
           </button>
         </div>
       </Modal>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteMetaConfirm !== null && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: 32,
+            maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Excluir meta?</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              Tem certeza que deseja excluir esta meta? Esta acao nao pode ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteMetaConfirm(null)}
+                disabled={deleteMetaLoading}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12,
+                  border: '1.5px solid var(--border)', background: 'white',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteMeta(deleteMetaConfirm)}
+                disabled={deleteMetaLoading}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12, border: 'none',
+                  background: '#EF4444', color: 'white', fontSize: 14,
+                  fontWeight: 600, cursor: deleteMetaLoading ? 'not-allowed' : 'pointer',
+                  opacity: deleteMetaLoading ? 0.7 : 1,
+                }}
+              >
+                {deleteMetaLoading ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

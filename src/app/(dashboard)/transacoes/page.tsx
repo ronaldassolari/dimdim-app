@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Modal from '@/components/Modal';
+import { useToast } from '@/components/ToastContext';
 
 interface Transacao {
   id: number;
@@ -63,6 +64,17 @@ const FREQUENCIAS = [
   { value: 'ANUAL', label: 'Anual' },
 ];
 
+type DateFilterKey = 'TODAS' | 'HOJE' | '7_DIAS' | 'ESTE_MES' | 'ESTE_ANO' | 'CUSTOM';
+
+const DATE_FILTER_TABS: { key: DateFilterKey; label: string }[] = [
+  { key: 'TODAS', label: 'Todas as datas' },
+  { key: 'HOJE', label: 'Hoje' },
+  { key: '7_DIAS', label: '7 dias' },
+  { key: 'ESTE_MES', label: 'Este mês' },
+  { key: 'ESTE_ANO', label: 'Este ano' },
+  { key: 'CUSTOM', label: 'Personalizado' },
+];
+
 function formatMoney(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -84,6 +96,32 @@ function parseInputMoney(formatted: string): number {
   const cleaned = formatted.replace(/\./g, '').replace(',', '.');
   const val = parseFloat(cleaned);
   return isNaN(val) ? 0 : val;
+}
+
+function getDateRange(key: DateFilterKey): { de: string; ate: string } | null {
+  if (key === 'TODAS') return null;
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  switch (key) {
+    case 'HOJE':
+      return { de: today, ate: today };
+    case '7_DIAS': {
+      const sevenAgo = new Date(now);
+      sevenAgo.setDate(sevenAgo.getDate() - 6);
+      return { de: sevenAgo.toISOString().slice(0, 10), ate: today };
+    }
+    case 'ESTE_MES': {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { de: firstDay.toISOString().slice(0, 10), ate: today };
+    }
+    case 'ESTE_ANO': {
+      const firstOfYear = new Date(now.getFullYear(), 0, 1);
+      return { de: firstOfYear.toISOString().slice(0, 10), ate: today };
+    }
+    default:
+      return null;
+  }
 }
 
 interface FormData {
@@ -122,8 +160,25 @@ export default function TransacoesPage() {
   const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const toast = useToast();
+
+  // Date filter state
+  const [dateFilter, setDateFilter] = useState<DateFilterKey>('TODAS');
+  const [customDateDe, setCustomDateDe] = useState('');
+  const [customDateAte, setCustomDateAte] = useState('');
+
+  // Compute effective date range
+  const effectiveDateRange = useMemo(() => {
+    if (dateFilter === 'CUSTOM') {
+      return (customDateDe || customDateAte)
+        ? { de: customDateDe || '', ate: customDateAte || '' }
+        : null;
+    }
+    return getDateRange(dateFilter);
+  }, [dateFilter, customDateDe, customDateAte]);
 
   const fetchTransacoes = useCallback(async () => {
     setLoading(true);
@@ -132,6 +187,8 @@ export default function TransacoesPage() {
       const params = new URLSearchParams();
       if (activeFilter !== 'TODAS') params.set('status', activeFilter);
       if (debouncedSearch) params.set('search', debouncedSearch);
+      if (effectiveDateRange?.de) params.set('data_de', effectiveDateRange.de);
+      if (effectiveDateRange?.ate) params.set('data_ate', effectiveDateRange.ate);
 
       const res = await fetch(`/api/transacoes?${params.toString()}`);
       if (!res.ok) throw new Error('Erro ao carregar transações');
@@ -144,7 +201,7 @@ export default function TransacoesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeFilter, debouncedSearch]);
+  }, [activeFilter, debouncedSearch, effectiveDateRange]);
 
   const fetchCartoes = useCallback(async () => {
     try {
@@ -175,6 +232,16 @@ export default function TransacoesPage() {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
     };
   }, [search]);
+
+  // Client-side filtered results (additional case-insensitive filtering for local responsiveness)
+  const filteredTransacoes = useMemo(() => {
+    if (!debouncedSearch) return transacoes;
+    const q = debouncedSearch.toLowerCase();
+    return transacoes.filter(tx =>
+      tx.descricao.toLowerCase().includes(q) ||
+      tx.categoria.toLowerCase().includes(q)
+    );
+  }, [transacoes, debouncedSearch]);
 
   const openNewModal = () => {
     setEditingTx(null);
@@ -207,19 +274,19 @@ export default function TransacoesPage() {
   const handleSave = async () => {
     const valor = parseInputMoney(formData.valorDisplay);
     if (!formData.descricao.trim()) {
-      alert('Preencha a descrição');
+      toast.warning('Preencha a descricao');
       return;
     }
     if (valor <= 0) {
-      alert('Preencha o valor');
+      toast.warning('Preencha o valor');
       return;
     }
     if (!formData.categoria) {
-      alert('Selecione uma categoria');
+      toast.warning('Selecione uma categoria');
       return;
     }
     if (!formData.data) {
-      alert('Preencha a data');
+      toast.warning('Preencha a data');
       return;
     }
 
@@ -262,11 +329,12 @@ export default function TransacoesPage() {
         throw new Error(err.error || 'Erro ao salvar');
       }
 
+      toast.success(editingTx ? 'Transacao atualizada!' : 'Transacao criada!');
       closeModal();
       fetchTransacoes();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao salvar transação';
-      alert(message);
+      const message = err instanceof Error ? err.message : 'Erro ao salvar transacao';
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -274,18 +342,19 @@ export default function TransacoesPage() {
 
   const handleDelete = async () => {
     if (!editingTx) return;
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
 
     setDeleting(true);
     try {
       const res = await fetch(`/api/transacoes/${editingTx.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Erro ao excluir');
 
+      toast.success('Transacao excluida!');
+      setDeleteConfirmOpen(false);
       closeModal();
       fetchTransacoes();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao excluir transação';
-      alert(message);
+      const message = err instanceof Error ? err.message : 'Erro ao excluir transacao';
+      toast.error(message);
     } finally {
       setDeleting(false);
     }
@@ -308,8 +377,9 @@ export default function TransacoesPage() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      toast.success('CSV exportado!');
     } catch {
-      alert('Erro ao exportar CSV');
+      toast.error('Erro ao exportar CSV');
     }
   };
 
@@ -336,6 +406,8 @@ export default function TransacoesPage() {
     marginBottom: 6,
     display: 'block',
   };
+
+  const hasActiveDateFilter = dateFilter !== 'TODAS';
 
   return (
     <div className="fade-in">
@@ -378,6 +450,109 @@ export default function TransacoesPage() {
         })}
       </div>
 
+      {/* Date filter */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: hasActiveDateFilter && dateFilter === 'CUSTOM' ? 10 : 0, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 14, marginRight: 4 }}>📅</span>
+          {DATE_FILTER_TABS.map(tab => {
+            const isActive = dateFilter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setDateFilter(tab.key);
+                  if (tab.key !== 'CUSTOM') {
+                    setCustomDateDe('');
+                    setCustomDateAte('');
+                  }
+                }}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 16,
+                  border: isActive ? '1.5px solid #3B82F6' : '1.5px solid transparent',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 200ms ease',
+                  background: isActive ? '#EFF6FF' : 'var(--bg)',
+                  color: isActive ? '#3B82F6' : 'var(--text-secondary)',
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+          {hasActiveDateFilter && dateFilter !== 'CUSTOM' && (
+            <button
+              onClick={() => { setDateFilter('TODAS'); setCustomDateDe(''); setCustomDateAte(''); }}
+              style={{
+                padding: '4px 8px',
+                borderRadius: 8,
+                border: 'none',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: '#FEE2E2',
+                color: '#EF4444',
+              }}
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+        {dateFilter === 'CUSTOM' && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>De</span>
+            <input
+              type="date"
+              value={customDateDe}
+              onChange={e => setCustomDateDe(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: '1.5px solid var(--border)',
+                fontSize: 13,
+                fontFamily: "'Inter', sans-serif",
+                outline: 'none',
+                background: 'white',
+              }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Até</span>
+            <input
+              type="date"
+              value={customDateAte}
+              onChange={e => setCustomDateAte(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: '1.5px solid var(--border)',
+                fontSize: 13,
+                fontFamily: "'Inter', sans-serif",
+                outline: 'none',
+                background: 'white',
+              }}
+            />
+            {(customDateDe || customDateAte) && (
+              <button
+                onClick={() => { setCustomDateDe(''); setCustomDateAte(''); setDateFilter('TODAS'); }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: 'none',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: '#FEE2E2',
+                  color: '#EF4444',
+                }}
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Search */}
       <div style={{ marginBottom: 20, position: 'relative' }}>
         <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16, pointerEvents: 'none' }}>
@@ -396,17 +571,64 @@ export default function TransacoesPage() {
       {/* Content */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {[1, 2, 3, 4, 5].map(i => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
               style={{
-                height: 72,
+                display: 'flex',
+                gap: 14,
+                padding: '14px 20px',
                 borderRadius: 16,
-                background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
-                backgroundSize: '200% 100%',
-                animation: 'shimmer 1.5s infinite',
+                background: 'white',
+                boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
               }}
-            />
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s infinite',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                <div
+                  style={{
+                    height: 14,
+                    borderRadius: 6,
+                    width: '70%',
+                    background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 1.5s infinite',
+                  }}
+                />
+                <div
+                  style={{
+                    height: 10,
+                    borderRadius: 5,
+                    width: '45%',
+                    background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 1.5s infinite',
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  width: 80,
+                  height: 16,
+                  borderRadius: 6,
+                  alignSelf: 'center',
+                  background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s infinite',
+                  flexShrink: 0,
+                }}
+              />
+            </div>
           ))}
           <style>{`
             @keyframes shimmer {
@@ -422,24 +644,26 @@ export default function TransacoesPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>{error}</p>
           <button className="btn-primary" onClick={fetchTransacoes}>Tentar novamente</button>
         </div>
-      ) : transacoes.length === 0 ? (
+      ) : filteredTransacoes.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-            {search ? 'Nenhum resultado' : 'Nenhuma transação'}
+            {search || hasActiveDateFilter ? 'Nenhum resultado' : 'Nenhuma transação'}
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
             {search
               ? `Nenhuma transação encontrada para "${search}"`
-              : 'Comece adicionando sua primeira transação'}
+              : hasActiveDateFilter
+                ? 'Nenhuma transação encontrada para o período selecionado'
+                : 'Comece adicionando sua primeira transação'}
           </p>
-          {!search && (
+          {!search && !hasActiveDateFilter && (
             <button className="btn-primary" onClick={openNewModal}>+ Nova Transação</button>
           )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {transacoes.map(tx => {
+          {filteredTransacoes.map(tx => {
             const statusStyle = STATUS_STYLES[tx.status] || STATUS_STYLES.PAGO;
             return (
               <div
@@ -500,30 +724,52 @@ export default function TransacoesPage() {
                   </p>
                 </div>
 
-                {/* Value */}
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <p
+                {/* Value + Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <p
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: tx.tipo === 'RECEITA' ? '#00C853' : '#EF4444',
+                        marginBottom: 4,
+                      }}
+                    >
+                      {tx.tipo === 'RECEITA' ? '+' : '-'} {formatMoney(tx.valor)}
+                    </p>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 10px',
+                        borderRadius: 10,
+                        background: statusStyle.bg,
+                        color: statusStyle.color,
+                      }}
+                    >
+                      {STATUS_LABELS[tx.status] || tx.status}
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openEditModal(tx); }}
+                    title="Editar"
                     style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: tx.tipo === 'RECEITA' ? '#00C853' : '#EF4444',
-                      marginBottom: 4,
-                    }}
-                  >
-                    {tx.tipo === 'RECEITA' ? '+' : '-'} {formatMoney(tx.valor)}
-                  </p>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      padding: '3px 10px',
+                      width: 34,
+                      height: 34,
                       borderRadius: 10,
-                      background: statusStyle.bg,
-                      color: statusStyle.color,
+                      border: '1.5px solid var(--border)',
+                      background: 'white',
+                      fontSize: 14,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 200ms ease',
+                      flexShrink: 0,
                     }}
                   >
-                    {STATUS_LABELS[tx.status] || tx.status}
-                  </span>
+                    ✏️
+                  </button>
                 </div>
               </div>
             );
@@ -727,7 +973,7 @@ export default function TransacoesPage() {
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             {editingTx && (
               <button
-                onClick={handleDelete}
+                onClick={() => setDeleteConfirmOpen(true)}
                 disabled={deleting}
                 style={{
                   padding: '12px 20px',
@@ -741,7 +987,7 @@ export default function TransacoesPage() {
                   transition: 'all 200ms ease',
                 }}
               >
-                {deleting ? 'Excluindo...' : '🗑 Excluir'}
+                {deleting ? 'Excluindo...' : '\uD83D\uDDD1 Excluir'}
               </button>
             )}
             <button
@@ -763,6 +1009,50 @@ export default function TransacoesPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: 32,
+            maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Excluir transacao?</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              Tem certeza que deseja excluir <strong>{editingTx?.descricao}</strong>? Esta acao nao pode ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleting}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12,
+                  border: '1.5px solid var(--border)', background: 'white',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12, border: 'none',
+                  background: '#EF4444', color: 'white', fontSize: 14,
+                  fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer',
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                {deleting ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

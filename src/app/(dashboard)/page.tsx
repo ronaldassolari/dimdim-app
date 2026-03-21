@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface Saldo {
   receitas: number;
@@ -77,6 +77,142 @@ function getGreeting(): string {
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-');
   return `${d}/${m}/${y}`;
+}
+
+function formatMoneyInput(cents: number): string {
+  const reais = (cents / 100).toFixed(2);
+  const [intPart, decPart] = reais.split('.');
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `R$ ${intFormatted},${decPart}`;
+}
+
+function parseMoneyCents(display: string): number {
+  const num = display.replace(/\D/g, '');
+  return parseInt(num || '0', 10);
+}
+
+function InlineSaldoEditor({
+  value,
+  mesAtual,
+  onSaved,
+}: {
+  value: number;
+  mesAtual: string;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [cents, setCents] = useState(Math.round(value * 100));
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setCents(Math.round(value * 100));
+  }, [value]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveStatus('idle');
+    try {
+      const res = await fetch('/api/saldo', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saldo: cents / 100, mes: mesAtual }),
+      });
+      if (!res.ok) throw new Error('Erro ao salvar');
+      setSaveStatus('success');
+      setEditing(false);
+      setTimeout(() => setSaveStatus('idle'), 2000);
+      onSaved();
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setCents(Math.round(value * 100));
+      setEditing(false);
+      setSaveStatus('idle');
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, '');
+    const newCents = parseInt(raw || '0', 10);
+    // Allow negative by checking if original had a minus prefix
+    setCents(newCents);
+  };
+
+  const isNeg = (cents / 100) < 0 || value < 0;
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'opacity 300ms ease', opacity: saving ? 0.6 : 1 }}>
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          value={formatMoneyInput(cents)}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onBlur={handleSave}
+          disabled={saving}
+          style={{
+            fontSize: 36,
+            fontWeight: 800,
+            letterSpacing: -1,
+            background: 'rgba(255,255,255,0.15)',
+            border: '2px solid rgba(255,255,255,0.4)',
+            borderRadius: 12,
+            color: 'white',
+            textAlign: 'center',
+            padding: '8px 16px',
+            outline: 'none',
+            width: 280,
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <p
+        onClick={() => setEditing(true)}
+        title="Clique para editar o saldo"
+        style={{
+          fontSize: 48,
+          fontWeight: 800,
+          letterSpacing: -1,
+          transition: 'opacity 300ms ease',
+          cursor: 'pointer',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+        onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+      >
+        {formatMoney(value)}
+      </p>
+      {saveStatus === 'success' && (
+        <span style={{ fontSize: 28, animation: 'fadeInOut 2s ease forwards' }}>✅</span>
+      )}
+      {saveStatus === 'error' && (
+        <span style={{ fontSize: 28, animation: 'fadeInOut 2s ease forwards' }}>❌</span>
+      )}
+    </div>
+  );
 }
 
 function Skeleton({ width, height }: { width: string | number; height: string | number }) {
@@ -351,6 +487,12 @@ export default function DashboardPage() {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
         }
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: scale(0.8); }
+          20% { opacity: 1; transform: scale(1); }
+          80% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(0.8); }
+        }
       `}</style>
 
       {/* Header */}
@@ -368,10 +510,14 @@ export default function DashboardPage() {
         className="card"
         style={{
           marginBottom: 24,
-          background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
+          background: saldo.saldo < 0
+            ? 'linear-gradient(135deg, #991B1B 0%, #7F1D1D 100%)'
+            : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
           color: 'white',
           position: 'relative',
           overflow: 'hidden',
+          border: saldo.saldo < 0 ? '2px solid #ef4444' : 'none',
+          transition: 'background 400ms ease, border 400ms ease',
         }}
       >
         <div
@@ -450,10 +596,19 @@ export default function DashboardPage() {
 
         {/* Saldo */}
         <div style={{ textAlign: 'center', marginBottom: 20, position: 'relative', zIndex: 1 }}>
-          <p style={{ fontSize: 13, opacity: 0.8, marginBottom: 4 }}>Saldo do mês</p>
-          <p style={{ fontSize: 48, fontWeight: 800, letterSpacing: -1 }}>
-            {formatMoney(saldo.saldo)}
+          <p style={{ fontSize: 13, opacity: 0.8, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            {saldo.saldo < 0 ? '⚠️' : '✅'} Saldo do mês
           </p>
+          <InlineSaldoEditor
+            value={saldo.saldo}
+            mesAtual={mesAtual}
+            onSaved={fetchData}
+          />
+          {saldo.saldo < 0 && (
+            <p style={{ fontSize: 13, marginTop: 6, color: '#FFCDD2', fontWeight: 600 }}>
+              Você está no vermelho este mês
+            </p>
+          )}
         </div>
 
         {/* Pills */}
@@ -590,24 +745,53 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Insights</h3>
           {insights.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {insights.map((text, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10,
-                    padding: '10px 12px',
-                    background: 'var(--bg)',
-                    borderRadius: 12,
-                  }}
-                >
-                  <span style={{ fontSize: 20, lineHeight: 1.2, flexShrink: 0 }}>
-                    {INSIGHT_ICONS[i % INSIGHT_ICONS.length]}
-                  </span>
-                  <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>{text}</p>
-                </div>
-              ))}
+              {insights.map((text, i) => {
+                // Extract leading emoji if present, otherwise use generic icon
+                const emojiMatch = text.match(new RegExp('^(\\p{Emoji_Presentation}|\\p{Extended_Pictographic})\\s*', 'u'));
+                const icon = emojiMatch ? emojiMatch[1] : INSIGHT_ICONS[i % INSIGHT_ICONS.length];
+                const displayText = emojiMatch ? text.slice(emojiMatch[0].length) : text;
+
+                // Determine urgency color based on icon
+                let bgColor = 'var(--bg)';
+                let borderLeft = 'none';
+                if (icon === '🔴' || icon === '⚠️') {
+                  bgColor = 'rgba(239,68,68,0.06)';
+                  borderLeft = '3px solid #ef4444';
+                } else if (icon === '💚') {
+                  bgColor = 'rgba(16,185,129,0.06)';
+                  borderLeft = '3px solid #10b981';
+                } else if (icon === '📈') {
+                  bgColor = 'rgba(245,158,11,0.06)';
+                  borderLeft = '3px solid #f59e0b';
+                } else if (icon === '🎯') {
+                  bgColor = 'rgba(124,58,237,0.06)';
+                  borderLeft = '3px solid #7c3aed';
+                } else if (icon === '🍽️') {
+                  bgColor = 'rgba(245,158,11,0.06)';
+                  borderLeft = '3px solid #f59e0b';
+                }
+
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      padding: '10px 12px',
+                      background: bgColor,
+                      borderRadius: 12,
+                      borderLeft,
+                      transition: 'transform 200ms ease',
+                    }}
+                  >
+                    <span style={{ fontSize: 20, lineHeight: 1.2, flexShrink: 0 }}>
+                      {icon}
+                    </span>
+                    <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>{displayText}</p>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Nenhum insight disponível ainda.</p>

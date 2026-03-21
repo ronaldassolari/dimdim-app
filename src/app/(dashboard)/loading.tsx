@@ -1,23 +1,57 @@
 export default function DashboardLoading() {
+  const skeletonStyle = (w: string | number, h: string | number): React.CSSProperties => ({
+    width: w,
+    height: h,
+    borderRadius: 12,
+    background: 'linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.5s infinite',
+  });
+
   return (
-    <div className="p-6 space-y-6 animate-pulse">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div style={{ padding: '8px 0' }}>
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+
+      {/* Header skeleton */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={skeletonStyle(200, 32)} />
+        <div style={skeletonStyle(120, 40)} />
+      </div>
+
+      {/* Stats cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
         {[1, 2, 3].map(i => (
-          <div key={i} className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="h-4 bg-gray-200 rounded w-1/3 mb-3" />
-            <div className="h-8 bg-gray-200 rounded w-2/3" />
+          <div key={i} style={{ background: 'white', borderRadius: 16, padding: 24, boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
+            <div style={{ ...skeletonStyle('40%', 14), marginBottom: 12 }} />
+            <div style={skeletonStyle('60%', 28)} />
           </div>
         ))}
       </div>
-      <div className="bg-white rounded-xl p-6 shadow-sm">
-        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4" />
-        <div className="h-48 bg-gray-200 rounded" />
+
+      {/* Chart area */}
+      <div style={{ background: 'white', borderRadius: 16, padding: 24, boxShadow: '0 2px 20px rgba(0,0,0,0.06)', marginBottom: 24 }}>
+        <div style={{ ...skeletonStyle('30%', 16), marginBottom: 20 }} />
+        <div style={skeletonStyle('100%', 200)} />
       </div>
-      <div className="bg-white rounded-xl p-6 shadow-sm">
-        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4" />
-        <div className="space-y-3">
+
+      {/* List items */}
+      <div style={{ background: 'white', borderRadius: 16, padding: 24, boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
+        <div style={{ ...skeletonStyle('25%', 16), marginBottom: 20 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="h-12 bg-gray-200 rounded" />
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={skeletonStyle(44, 44)} />
+              <div style={{ flex: 1 }}>
+                <div style={{ ...skeletonStyle('50%', 14), marginBottom: 6 }} />
+                <div style={skeletonStyle('30%', 12)} />
+              </div>
+              <div style={skeletonStyle(80, 20)} />
+            </div>
           ))}
         </div>
       </div>

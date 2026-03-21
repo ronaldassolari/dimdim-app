@@ -12,6 +12,7 @@ interface AulaRow {
   ordem: number;
   concluida: number | null;
   quiz_score: number | null;
+  data_conclusao: string | null;
 }
 
 export async function GET() {
@@ -31,7 +32,7 @@ export async function GET() {
     const { rows } = await sql`
       SELECT
         a.id, a.trilha, a.numero, a.titulo, a.badge_nome, a.ordem,
-        pa.concluida, pa.quiz_score
+        pa.concluida, pa.quiz_score, pa.data_conclusao
       FROM aulas a
       LEFT JOIN progresso_aulas pa ON pa.aula_id = a.id AND pa.user_id = ${session.id}
       ORDER BY a.ordem ASC
@@ -51,6 +52,7 @@ export async function GET() {
         quiz_score: number;
         acessivel: boolean;
         badge_nome: string | null;
+        data_conclusao: string | null;
       }[];
     }> = {};
 
@@ -82,6 +84,7 @@ export async function GET() {
           quiz_score: aula.quiz_score || 0,
           acessivel: aulaAcessivel,
           badge_nome: aula.badge_nome,
+          data_conclusao: concluida ? (aula.data_conclusao || null) : null,
         };
       });
 

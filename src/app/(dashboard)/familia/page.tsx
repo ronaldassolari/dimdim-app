@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Modal from '@/components/Modal';
+import { useToast } from '@/components/ToastContext';
 
 interface Membro {
   id: number;
@@ -19,6 +20,14 @@ function formatMoney(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const APP_URL = typeof window !== 'undefined' ? window.location.origin : 'https://dimdim-snowy.vercel.app';
+
+const STATUS_BADGES: Record<string, { label: string; color: string; bg: string }> = {
+  PENDENTE: { label: 'Pendente', color: '#F59E0B', bg: '#FFF8E1' },
+  ATIVO: { label: 'Aceito', color: '#00C853', bg: '#E8F5E9' },
+  EXPIRADO: { label: 'Expirado', color: '#EF4444', bg: '#FFEBEE' },
+};
+
 const PERMISSAO_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   admin: { label: 'Admin', color: '#7C3AED', bg: '#F3E8FF' },
   ver_tudo: { label: 'Ver Tudo', color: '#3B82F6', bg: '#DBEAFE' },
@@ -26,6 +35,7 @@ const PERMISSAO_LABELS: Record<string, { label: string; color: string; bg: strin
 };
 
 export default function FamiliaPage() {
+  const toast = useToast();
   const [membros, setMembros] = useState<Membro[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +49,9 @@ export default function FamiliaPage() {
   const [formEmail, setFormEmail] = useState('');
   const [formPermissao, setFormPermissao] = useState('proprio');
   const [editPermissao, setEditPermissao] = useState('proprio');
+  const [removeConfirmId, setRemoveConfirmId] = useState<number | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fetchMembros = useCallback(async () => {
     setLoading(true);
@@ -77,7 +90,7 @@ export default function FamiliaPage() {
       setInviteResult(newMembro);
       setMembros((prev) => [newMembro, ...prev]);
     } catch {
-      alert('Erro ao enviar convite. Tente novamente.');
+      toast.error('Erro ao enviar convite. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -98,20 +111,24 @@ export default function FamiliaPage() {
       setShowEdit(false);
       setEditMembro(null);
     } catch {
-      alert('Erro ao atualizar membro.');
+      toast.error('Erro ao atualizar membro.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemove = async (id: number) => {
-    if (!confirm('Tem certeza que deseja remover este membro?')) return;
+    setRemoveLoading(true);
     try {
       const res = await fetch(`/api/familia/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Erro ao remover');
       setMembros((prev) => prev.filter((m) => m.id !== id));
+      toast.success('Membro removido!');
+      setRemoveConfirmId(null);
     } catch {
-      alert('Erro ao remover membro.');
+      toast.error('Erro ao remover membro.');
+    } finally {
+      setRemoveLoading(false);
     }
   };
 
@@ -214,7 +231,7 @@ export default function FamiliaPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
           {membros.map((membro) => {
             const permInfo = PERMISSAO_LABELS[membro.permissao] || PERMISSAO_LABELS.proprio;
-            const isAtivo = membro.status === 'ATIVO';
+            const statusInfo = STATUS_BADGES[membro.status] || STATUS_BADGES.PENDENTE;
             return (
               <div
                 key={membro.id}
@@ -251,11 +268,11 @@ export default function FamiliaPage() {
                           fontWeight: 600,
                           padding: '3px 10px',
                           borderRadius: 20,
-                          background: isAtivo ? '#E8F5E9' : '#FFF8E1',
-                          color: isAtivo ? '#00C853' : '#F59E0B',
+                          background: statusInfo.bg,
+                          color: statusInfo.color,
                         }}
                       >
-                        {isAtivo ? 'Ativo' : 'Pendente'}
+                        {statusInfo.label}
                       </span>
                       <span
                         style={{
@@ -305,7 +322,7 @@ export default function FamiliaPage() {
                       ✏️
                     </button>
                     <button
-                      onClick={() => handleRemove(membro.id)}
+                      onClick={() => setRemoveConfirmId(membro.id)}
                       style={{
                         width: 36,
                         height: 36,
@@ -387,28 +404,56 @@ export default function FamiliaPage() {
               <p style={{ color: 'white', fontSize: 28, fontWeight: 800, letterSpacing: 3 }}>{inviteResult.codigo_convite}</p>
             </div>
 
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(
-                `Oi! Estou te convidando para o DIMDIM, nosso assistente financeiro familiar. Use o codigo ${inviteResult.codigo_convite} para entrar no meu plano!`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '14px 28px',
-                borderRadius: 16,
-                background: '#25D366',
-                color: 'white',
-                fontWeight: 700,
-                fontSize: 15,
-                textDecoration: 'none',
-                transition: 'all 200ms',
-              }}
-            >
-              <span style={{ fontSize: 22 }}>📱</span> Compartilhar via WhatsApp
-            </a>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `Voce foi convidado para o DimDim Familia! Use o codigo: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '14px 28px',
+                  borderRadius: 16,
+                  background: '#25D366',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: 15,
+                  textDecoration: 'none',
+                  transition: 'all 200ms',
+                }}
+              >
+                <span style={{ fontSize: 22 }}>📱</span> Enviar via WhatsApp
+              </a>
+
+              <button
+                onClick={() => {
+                  const text = `Voce foi convidado para o DimDim Familia! Use o codigo: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`;
+                  navigator.clipboard.writeText(text).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2500);
+                  });
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '14px 24px',
+                  borderRadius: 16,
+                  border: '1px solid var(--border)',
+                  background: copied ? '#E8F5E9' : 'white',
+                  color: copied ? '#00C853' : 'var(--text)',
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: 'pointer',
+                  transition: 'all 200ms',
+                }}
+              >
+                {copied ? '✓ Copiado!' : '📋 Copiar link'}
+              </button>
+            </div>
 
             <div style={{ marginTop: 24 }}>
               <button
@@ -584,6 +629,50 @@ export default function FamiliaPage() {
           </div>
         )}
       </Modal>
+
+      {/* Remove Confirmation Dialog */}
+      {removeConfirmId !== null && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: 32,
+            maxWidth: 400, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Remover membro?</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              Tem certeza que deseja remover este membro da familia?
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setRemoveConfirmId(null)}
+                disabled={removeLoading}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12,
+                  border: '1.5px solid var(--border)', background: 'white',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleRemove(removeConfirmId)}
+                disabled={removeLoading}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 12, border: 'none',
+                  background: '#EF4444', color: 'white', fontSize: 14,
+                  fontWeight: 600, cursor: removeLoading ? 'not-allowed' : 'pointer',
+                  opacity: removeLoading ? 0.7 : 1,
+                }}
+              >
+                {removeLoading ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

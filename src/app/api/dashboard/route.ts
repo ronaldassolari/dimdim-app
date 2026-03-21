@@ -3,7 +3,7 @@ import { sql } from '@/lib/db';
 import { withAuth } from '@/lib/api-handler';
 
 interface SomaRow { total: number | null }
-interface MetaRow { id: number; titulo: string; valor_alvo: number; valor_atual: number; categoria: string | null }
+interface MetaRow { id: number; titulo: string; valor_alvo: number; valor_atual: number; categoria: string | null; prazo: string | null }
 interface SaldoRow { saldo: number | null }
 interface AlertaRow { total: number }
 interface TransacaoRow { data: string; valor: number; tipo: string; status: string }
@@ -79,7 +79,7 @@ export const GET = withAuth(async (request, session) => {
 
   // Top 2 goals
   const { rows: metas } = await sql`
-    SELECT id, titulo, valor_alvo, valor_atual, categoria FROM metas
+    SELECT id, titulo, valor_alvo, valor_atual, categoria, prazo FROM metas
     WHERE user_id = ${session.id} AND ativa = 1 ORDER BY created_at DESC LIMIT 2
   `;
 
@@ -95,27 +95,96 @@ export const GET = withAuth(async (request, session) => {
   const pontosTotal = pontosRows[0] as SaldoRow;
   const pontosValor = Math.round((Number(pontosTotal.saldo) || 0) * 0.01 * 100) / 100;
 
-  // Insights based on actual data
+  // Personalized insights based on actual data
   const insights: string[] = [];
-  if (saldo.gastos > 0) {
-    const percentGasto = Math.round((saldo.gastos / (saldo.receitas || 1)) * 100);
-    insights.push(`Você gastou ${percentGasto}% da sua receita recebida este mês`);
+
+  // Spending percentage (fix: ensure single multiplication by 100)
+  if (saldo.gastos > 0 && saldo.receitas > 0) {
+    const percentGasto = (saldo.gastos / saldo.receitas) * 100;
+    const percentFormatted = percentGasto.toFixed(2).replace('.', ',');
+    if (saldo.gastos > saldo.receitas) {
+      insights.push(`🔴 Atenção: você está gastando mais do que ganha este mês (${percentFormatted}% da receita)`);
+    } else if (percentGasto > 80) {
+      insights.push(`⚠️ Você gastou ${percentFormatted}% da sua receita. Cuidado para não ultrapassar!`);
+    } else {
+      insights.push(`💚 Parabéns! Você gastou apenas ${percentFormatted}% da receita. Está sobrando R$ ${(saldo.receitas - saldo.gastos).toFixed(2)}`);
+    }
+  } else if (saldo.gastos > 0 && saldo.receitas === 0) {
+    insights.push('🔴 Atenção: você está gastando mais do que ganha este mês');
   }
+
+  // Food spending > 40% of total
+  const { rows: categoriasRows } = await sql`
+    SELECT categoria, COALESCE(SUM(valor), 0) as total FROM transacoes
+    WHERE user_id = ${session.id} AND tipo = 'GASTO' AND data LIKE ${mesLike}
+    GROUP BY categoria ORDER BY total DESC
+  `;
+  const totalGastosCat = (categoriasRows as { categoria: string; total: number }[]).reduce((s, c) => s + Number(c.total), 0);
+  if (totalGastosCat > 0) {
+    const alimentacao = (categoriasRows as { categoria: string; total: number }[]).find(c => c.categoria === 'Alimentação');
+    if (alimentacao) {
+      const pctAlim = (Number(alimentacao.total) / totalGastosCat) * 100;
+      if (pctAlim > 40) {
+        insights.push(`🍽️ Você gastou ${pctAlim.toFixed(0)}% com alimentação. Meta recomendada: 30%`);
+      }
+    }
+  }
+
+  // Spending increase vs last month
+  const mesAnterior = (() => {
+    const [a, m] = mes.split('-').map(Number);
+    const prev = new Date(a, m - 2, 1);
+    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const mesAnteriorLike = mesAnterior + '%';
+  const { rows: gastosMesAnteriorRows } = await sql`
+    SELECT COALESCE(SUM(valor), 0) as total FROM transacoes
+    WHERE user_id = ${session.id} AND tipo = 'GASTO' AND status = 'PAGO' AND data LIKE ${mesAnteriorLike}
+  `;
+  const gastosMesAnterior = Number((gastosMesAnteriorRows[0] as SomaRow).total) || 0;
+  if (gastosMesAnterior > 0 && saldo.gastos > gastosMesAnterior) {
+    const aumento = ((saldo.gastos - gastosMesAnterior) / gastosMesAnterior) * 100;
+    insights.push(`📈 Seus gastos aumentaram ${aumento.toFixed(0)}% em relação ao mês passado`);
+  }
+
+  // Growing balance
+  const { rows: receitasMesAnteriorRows } = await sql`
+    SELECT COALESCE(SUM(valor), 0) as total FROM transacoes
+    WHERE user_id = ${session.id} AND tipo = 'RECEITA' AND status = 'RECEBIDO' AND data LIKE ${mesAnteriorLike}
+  `;
+  const receitasMesAnterior = Number((receitasMesAnteriorRows[0] as SomaRow).total) || 0;
+  const saldoAnterior = receitasMesAnterior - gastosMesAnterior;
+  if (saldo.saldo > 0 && saldoAnterior > 0 && saldo.saldo > saldoAnterior) {
+    const crescimento = ((saldo.saldo - saldoAnterior) / saldoAnterior) * 100;
+    insights.push(`💚 Parabéns! Seu saldo cresceu ${crescimento.toFixed(0)}% este mês`);
+  }
+
+  // Goal near deadline
+  if (metasComProgresso.length > 0) {
+    for (const meta of metasComProgresso) {
+      const metaOriginal = (metas as MetaRow[]).find(m => m.id === meta.id);
+      // Check if the meta has prazo field via the original rows
+      const prazo = (metaOriginal as any)?.prazo;
+      if (prazo) {
+        const diasRestantes = Math.ceil((new Date(prazo).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const faltam = Number(meta.valor_alvo) - Number(meta.valor_atual);
+        if (diasRestantes > 0 && diasRestantes <= 30 && faltam > 0) {
+          insights.push(`🎯 Sua meta "${meta.titulo}" vence em ${diasRestantes} dias. Faltam R$ ${faltam.toFixed(2)}`);
+        }
+      } else {
+        insights.push(`🎯 Meta "${meta.titulo}" está ${meta.progresso}% completa. Faltam R$ ${(Number(meta.valor_alvo) - Number(meta.valor_atual)).toFixed(2)}`);
+      }
+    }
+  }
+
   if (saldo.aPagar > 0) {
-    insights.push(`Ainda tem R$ ${saldo.aPagar.toFixed(2)} a pagar neste mês`);
+    insights.push(`⏰ Ainda tem R$ ${saldo.aPagar.toFixed(2)} a pagar neste mês`);
   }
   if (saldo.aReceber > 0) {
-    insights.push(`R$ ${saldo.aReceber.toFixed(2)} a receber vai melhorar seu saldo`);
-  }
-  if (metasComProgresso.length > 0) {
-    const meta = metasComProgresso[0];
-    insights.push(`Meta "${meta.titulo}" está ${meta.progresso}% completa`);
-  }
-  if (pontosValor > 0) {
-    insights.push(`Seus pontos valem aproximadamente R$ ${pontosValor.toFixed(2)}`);
+    insights.push(`💰 R$ ${saldo.aReceber.toFixed(2)} a receber vai melhorar seu saldo`);
   }
   if (insights.length < 3) {
-    insights.push('Categorize todas as transações para insights mais precisos');
+    insights.push('💡 Categorize todas as transações para insights mais precisos');
   }
 
   // Unread alerts

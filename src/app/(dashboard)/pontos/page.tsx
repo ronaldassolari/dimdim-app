@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useToast } from '@/components/ToastContext';
 
 interface Programa {
   id: number;
@@ -84,6 +85,7 @@ function Skeleton({ width, height }: { width: string | number; height: string | 
 }
 
 export default function PontosPage() {
+  const toast = useToast();
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -95,9 +97,14 @@ export default function PontosPage() {
   const [calcResult, setCalcResult] = useState<CalcResult | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
 
-  // Edit saldo state
-  const [editingId, setEditingId] = useState<number | null>(null);
+  // Edit program state
+  const [editingPrograma, setEditingPrograma] = useState<Programa | null>(null);
   const [editSaldo, setEditSaldo] = useState('');
+  const [editValidade, setEditValidade] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Legacy inline edit (kept for compatibility)
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // Delete state
   const [deleteConfirm, setDeleteConfirm] = useState<Programa | null>(null);
@@ -133,7 +140,7 @@ export default function PontosPage() {
 
   const handleCalc = async () => {
     const valor = parseInputMoney(calcValorDisplay);
-    if (valor <= 0) { alert('Informe um valor'); return; }
+    if (valor <= 0) { toast.warning('Informe um valor'); return; }
 
     setCalcLoading(true);
     try {
@@ -146,7 +153,7 @@ export default function PontosPage() {
       const data = await res.json();
       setCalcResult(data);
     } catch {
-      alert('Erro ao calcular pontos');
+      toast.error('Erro ao calcular pontos');
     } finally {
       setCalcLoading(false);
     }
@@ -154,7 +161,7 @@ export default function PontosPage() {
 
   const handleUpdateSaldo = async (programaId: number) => {
     const saldo = parseInt(editSaldo, 10);
-    if (isNaN(saldo) || saldo < 0) { alert('Informe um saldo válido'); return; }
+    if (isNaN(saldo) || saldo < 0) { toast.warning('Informe um saldo valido'); return; }
 
     setSavingSaldoId(programaId);
     try {
@@ -168,9 +175,39 @@ export default function PontosPage() {
       setEditSaldo('');
       fetchProgramas();
     } catch {
-      alert('Erro ao atualizar saldo');
+      toast.error('Erro ao atualizar saldo');
     } finally {
       setSavingSaldoId(null);
+    }
+  };
+
+  const openEditPrograma = (prog: Programa) => {
+    setEditingPrograma(prog);
+    setEditSaldo(String(prog.saldo || 0));
+    setEditValidade(prog.validade || '');
+  };
+
+  const handleEditPrograma = async () => {
+    if (!editingPrograma || !editingPrograma.analise_id) return;
+    const saldo = parseInt(editSaldo, 10);
+    if (isNaN(saldo) || saldo < 0) { toast.warning('Informe um saldo valido'); return; }
+
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/pontos/${editingPrograma.analise_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saldo, validade: editValidade || null }),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar');
+      setEditingPrograma(null);
+      setEditSaldo('');
+      setEditValidade('');
+      fetchProgramas();
+    } catch {
+      toast.error('Erro ao atualizar programa');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -183,16 +220,16 @@ export default function PontosPage() {
       setProgramas(prev => prev.map(p => p.id === deleteConfirm.id ? { ...p, saldo: null, validade: null, analise_id: null } : p));
       setDeleteConfirm(null);
     } catch {
-      alert('Erro ao remover programa');
+      toast.error('Erro ao remover programa');
     } finally {
       setDeleteLoading(false);
     }
   };
 
   const handleAddPrograma = async () => {
-    if (!addProgramaId) { alert('Selecione um programa'); return; }
+    if (!addProgramaId) { toast.warning('Selecione um programa'); return; }
     const saldo = parseInt(addSaldo, 10);
-    if (isNaN(saldo) || saldo <= 0) { alert('Informe um saldo válido'); return; }
+    if (isNaN(saldo) || saldo <= 0) { toast.warning('Informe um saldo valido'); return; }
 
     setAddSaving(true);
     try {
@@ -212,7 +249,7 @@ export default function PontosPage() {
       setAddValidade('');
       fetchProgramas();
     } catch {
-      alert('Erro ao adicionar programa');
+      toast.error('Erro ao adicionar programa');
     } finally {
       setAddSaving(false);
     }
@@ -228,7 +265,7 @@ export default function PontosPage() {
       if (!res.ok) throw new Error('Erro');
       fetchProgramas();
     } catch {
-      alert('Erro ao registrar interesse');
+      toast.error('Erro ao registrar interesse');
     }
   };
 
@@ -379,8 +416,30 @@ export default function PontosPage() {
                           </div>
                         </div>
 
-                        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--purple)', marginBottom: 4 }}>
-                          {(prog.saldo || 0).toLocaleString('pt-BR')}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--purple)' }}>
+                            {(prog.saldo || 0).toLocaleString('pt-BR')}
+                          </div>
+                          <button
+                            onClick={() => openEditPrograma(prog)}
+                            title="Editar programa"
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 10,
+                              border: '1.5px solid var(--border)',
+                              background: 'white',
+                              fontSize: 14,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 200ms ease',
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✏️
+                          </button>
                         </div>
                         <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12 }}>
                           ≈ {formatMoney(valorReais)}
@@ -407,73 +466,6 @@ export default function PontosPage() {
                           </div>
                         )}
 
-                        {isEditing ? (
-                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                            <input
-                              type="number"
-                              placeholder="Novo saldo"
-                              value={editSaldo}
-                              onChange={e => setEditSaldo(e.target.value)}
-                              style={{
-                                flex: 1,
-                                padding: '8px 12px',
-                                border: '1.5px solid var(--purple)',
-                                borderRadius: 10,
-                                fontSize: 13,
-                                outline: 'none',
-                                fontFamily: "'Inter', sans-serif",
-                              }}
-                              autoFocus
-                            />
-                            <button
-                              onClick={() => handleUpdateSaldo(prog.id)}
-                              style={{
-                                padding: '8px 14px',
-                                borderRadius: 10,
-                                border: 'none',
-                                background: 'var(--purple)',
-                                color: 'white',
-                                fontSize: 13,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              OK
-                            </button>
-                            <button
-                              onClick={() => { setEditingId(null); setEditSaldo(''); }}
-                              style={{
-                                padding: '8px 12px',
-                                borderRadius: 10,
-                                border: '1px solid var(--border)',
-                                background: 'white',
-                                fontSize: 13,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              X
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setEditingId(prog.id); setEditSaldo(String(prog.saldo || 0)); }}
-                            style={{
-                              marginTop: 4,
-                              padding: '8px 16px',
-                              borderRadius: 10,
-                              border: '1.5px solid var(--border)',
-                              background: 'white',
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--text-secondary)',
-                              cursor: 'pointer',
-                              transition: 'all 200ms ease',
-                              width: '100%',
-                            }}
-                          >
-                            Editar saldo
-                          </button>
-                        )}
 
                         <button
                           onClick={() => setDeleteConfirm(prog)}
@@ -652,9 +644,18 @@ export default function PontosPage() {
                             <div>
                               <div style={{ fontSize: 15, fontWeight: 700 }}>{item.apelido}</div>
                               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                {item.banco} · {item.bandeira} · {item.nivel}
+                                {item.banco} {item.bandeira} {item.nivel}
+                                {item.programas_pontos && item.programas_pontos.length > 0 && (
+                                  <> · {item.programas_pontos.join(', ')}</>
+                                )}
                               </div>
                             </div>
+                          </div>
+
+                          {/* Detailed breakdown per program */}
+                          <div style={{ background: '#F3E8FF', padding: '8px 12px', borderRadius: 10, marginBottom: 12, fontSize: 13, color: '#7C3AED', fontWeight: 500 }}>
+                            {item.banco} {item.bandeira}
+                            {item.programas_pontos && item.programas_pontos.length > 0 ? ` (${item.programas_pontos.join(', ')})` : ''}: {item.pontosGanhos.toLocaleString('pt-BR')} pontos ({item.pontos_por_real}x) = {formatMoney(item.valorEquivalente)}
                           </div>
 
                           <div style={{ display: 'flex', gap: 24, marginBottom: msg ? 12 : 0 }}>
@@ -921,6 +922,88 @@ export default function PontosPage() {
                   }}
                 >
                   {addSaving ? 'Salvando...' : 'Adicionar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Program Modal */}
+      {editingPrograma && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 20, padding: '32px',
+            maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>
+              Editar {editingPrograma.nome}
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Saldo de pontos</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 50000"
+                  value={editSaldo}
+                  onChange={e => setEditSaldo(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%', padding: '12px 16px', border: '1.5px solid var(--border)',
+                    borderRadius: 12, fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--purple)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Data de vencimento</label>
+                <input
+                  type="date"
+                  value={editValidade}
+                  onChange={e => setEditValidade(e.target.value)}
+                  style={{
+                    width: '100%', padding: '12px 16px', border: '1.5px solid var(--border)',
+                    borderRadius: 12, fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--purple)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+
+              {editSaldo && Number(editSaldo) > 0 && (
+                <div style={{ background: '#F3E8FF', padding: '12px 16px', borderRadius: 12, fontSize: 14, color: '#7C3AED', fontWeight: 500 }}>
+                  {Number(editSaldo).toLocaleString('pt-BR')} pontos = ~{formatMoney(Number(editSaldo) * 0.01)}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={() => { setEditingPrograma(null); setEditSaldo(''); setEditValidade(''); }}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: 12,
+                    border: '1.5px solid var(--border)', background: 'white',
+                    fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={handleEditPrograma}
+                  disabled={editSaving}
+                  style={{
+                    flex: 1, opacity: editSaving ? 0.7 : 1,
+                    cursor: editSaving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {editSaving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </div>

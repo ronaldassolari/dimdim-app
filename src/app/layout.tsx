@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import CookieBanner from '@/components/CookieBanner';
+import { ToastProvider } from '@/components/ToastContext';
+import ToastContainer from '@/components/Toast';
+import ThemeInitializer from '@/components/ThemeInitializer';
 
 export const metadata: Metadata = {
   title: 'Dimdim — Assistente Financeiro Pessoal',
@@ -29,7 +32,11 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body>
-        {children}
+        <ThemeInitializer />
+        <ToastProvider>
+          {children}
+          <ToastContainer />
+        </ToastProvider>
         <CookieBanner />
       </body>
     </html>

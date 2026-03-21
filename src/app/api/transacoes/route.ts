@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || null;
     const search = searchParams.get('search') || null;
     const mes = searchParams.get('mes') || null;
+    const cartao_id = searchParams.get('cartao_id') || null;
+    const data_de = searchParams.get('data_de') || null;
+    const data_ate = searchParams.get('data_ate') || null;
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
 
@@ -55,6 +58,9 @@ export async function GET(request: NextRequest) {
 
     let transacoes = rows as Record<string, any>[];
     if (search) transacoes = transacoes.filter(t => (t.descricao as string || '').toLowerCase().includes(search.toLowerCase()));
+    if (cartao_id) transacoes = transacoes.filter(t => String(t.cartao_id) === cartao_id);
+    if (data_de) transacoes = transacoes.filter(t => (t.data as string) >= data_de);
+    if (data_ate) transacoes = transacoes.filter(t => (t.data as string) <= data_ate);
 
     const total = transacoes.length;
     const totalPages = Math.ceil(total / limit);

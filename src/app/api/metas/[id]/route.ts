@@ -8,14 +8,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     await seed();
     const session = getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 });
     }
 
     const { id } = params;
 
     const { rows: existingRows } = await sql`SELECT * FROM metas WHERE id = ${Number(id)} AND user_id = ${session.id}`;
     if (!existingRows[0]) {
-      return NextResponse.json({ error: 'Meta não encontrada' }, { status: 404 });
+      return NextResponse.json({ error: 'Meta nao encontrada' }, { status: 404 });
     }
 
     const body = await request.json();
@@ -33,7 +33,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     `;
 
     const { rows: updatedRows } = await sql`SELECT * FROM metas WHERE id = ${Number(id)}`;
-    return NextResponse.json(updatedRows[0]);
+    const meta = updatedRows[0];
+
+    // Ensure numeric fields
+    return NextResponse.json({
+      ...meta,
+      valor_alvo: Number(meta.valor_alvo),
+      valor_atual: Number(meta.valor_atual),
+      ativa: Number(meta.ativa),
+    });
   } catch (error) {
     console.error('Erro ao atualizar meta:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
@@ -45,19 +53,19 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
     await seed();
     const session = getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 });
     }
 
     const { id } = params;
 
     const { rows: existingRows } = await sql`SELECT * FROM metas WHERE id = ${Number(id)} AND user_id = ${session.id}`;
     if (!existingRows[0]) {
-      return NextResponse.json({ error: 'Meta não encontrada' }, { status: 404 });
+      return NextResponse.json({ error: 'Meta nao encontrada' }, { status: 404 });
     }
 
     await sql`DELETE FROM metas WHERE id = ${Number(id)} AND user_id = ${session.id}`;
 
-    return NextResponse.json({ message: 'Meta excluída com sucesso' });
+    return NextResponse.json({ message: 'Meta excluida com sucesso' });
   } catch (error) {
     console.error('Erro ao excluir meta:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });

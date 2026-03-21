@@ -18,29 +18,62 @@ function gerarInsightsEstaticos(dados: any): Insight[] {
   const insights: Insight[] = [];
   const { receitas, gastos, aPagar, metas, pontos, topCategorias } = dados;
 
+  // Spending percentage - ensure single multiplication by 100
   if (gastos > 0 && receitas > 0) {
-    const pct = Math.round((gastos / receitas) * 100);
-    if (pct > 80) {
+    const pct = (gastos / receitas) * 100;
+    const pctFormatted = pct.toFixed(2).replace('.', ',');
+    if (gastos > receitas) {
+      insights.push({
+        tipo: 'gasto_critico',
+        mensagem: `🔴 Atenção: você está gastando mais do que ganha este mês (${pctFormatted}% da receita).`,
+        acao_sugerida: 'Revise urgentemente seus gastos e corte o que não é essencial.',
+        urgencia: 'alta',
+      });
+    } else if (pct > 80) {
       insights.push({
         tipo: 'gasto_alto',
-        mensagem: `Você gastou ${pct}% da sua receita este mês. Cuidado para não ultrapassar.`,
+        mensagem: `⚠️ Você gastou ${pctFormatted}% da sua receita este mês. Cuidado para não ultrapassar.`,
         acao_sugerida: 'Revise gastos variáveis e corte o que não é essencial.',
         urgencia: pct > 95 ? 'alta' : 'media',
       });
     } else {
       insights.push({
         tipo: 'economia',
-        mensagem: `Parabéns! Você gastou apenas ${pct}% da receita. Está sobrando R$ ${(receitas - gastos).toFixed(2)}.`,
+        mensagem: `💚 Parabéns! Você gastou apenas ${pctFormatted}% da receita. Está sobrando R$ ${(receitas - gastos).toFixed(2)}.`,
         acao_sugerida: 'Invista o excedente em Tesouro Selic ou aporte na sua meta.',
         urgencia: 'baixa',
       });
+    }
+  } else if (gastos > 0 && receitas === 0) {
+    insights.push({
+      tipo: 'gasto_critico',
+      mensagem: '🔴 Atenção: você está gastando mais do que ganha este mês.',
+      acao_sugerida: 'Registre suas receitas e revise os gastos urgentemente.',
+      urgencia: 'alta',
+    });
+  }
+
+  // Food spending check
+  if (topCategorias.length > 0) {
+    const totalGastos = topCategorias.reduce((s: number, c: any) => s + Number(c.total), 0);
+    const alimentacao = topCategorias.find((c: any) => c.categoria === 'Alimentação');
+    if (alimentacao && totalGastos > 0) {
+      const pctAlim = (Number(alimentacao.total) / totalGastos) * 100;
+      if (pctAlim > 40) {
+        insights.push({
+          tipo: 'alimentacao_alta',
+          mensagem: `🍽️ Você gastou ${pctAlim.toFixed(0)}% com alimentação. Meta recomendada: 30%.`,
+          acao_sugerida: 'Planeje refeições e cozinhe mais em casa para economizar.',
+          urgencia: 'media',
+        });
+      }
     }
   }
 
   if (aPagar > 0) {
     insights.push({
       tipo: 'pendencia',
-      mensagem: `Ainda tem R$ ${aPagar.toFixed(2)} a pagar neste mês.`,
+      mensagem: `⏰ Ainda tem R$ ${aPagar.toFixed(2)} a pagar neste mês.`,
       acao_sugerida: 'Programe os pagamentos para evitar juros e multas.',
       urgencia: aPagar > receitas * 0.3 ? 'alta' : 'media',
     });
@@ -49,9 +82,10 @@ function gerarInsightsEstaticos(dados: any): Insight[] {
   if (metas.length > 0) {
     const meta = metas[0];
     const pct = Math.round((Number(meta.valor_atual) / Number(meta.valor_alvo)) * 100);
+    const faltam = Number(meta.valor_alvo) - Number(meta.valor_atual);
     insights.push({
       tipo: 'meta_progresso',
-      mensagem: `Meta "${meta.titulo}" está ${pct}% completa. Faltam R$ ${(Number(meta.valor_alvo) - Number(meta.valor_atual)).toFixed(2)}.`,
+      mensagem: `🎯 Meta "${meta.titulo}" está ${pct}% completa. Faltam R$ ${faltam.toFixed(2)}.`,
       acao_sugerida: pct < 50 ? 'Aumente o aporte mensal para alcançar a meta no prazo.' : 'Está no caminho certo! Mantenha a disciplina.',
       urgencia: pct < 25 ? 'media' : 'baixa',
     });
@@ -61,7 +95,7 @@ function gerarInsightsEstaticos(dados: any): Insight[] {
     const valorReais = (pontos * 0.01).toFixed(2);
     insights.push({
       tipo: 'pontos',
-      mensagem: `Seus ${pontos.toLocaleString()} pontos valem R$ ${valorReais}. Não deixe expirar!`,
+      mensagem: `💰 Seus ${pontos.toLocaleString()} pontos valem R$ ${valorReais}. Não deixe expirar!`,
       acao_sugerida: 'Verifique a validade e considere transferir para programas de viagem com bônus.',
       urgencia: 'baixa',
     });
@@ -71,7 +105,7 @@ function gerarInsightsEstaticos(dados: any): Insight[] {
     const top = topCategorias[0];
     insights.push({
       tipo: 'categoria',
-      mensagem: `Sua maior despesa é ${top.categoria}: R$ ${Number(top.total).toFixed(2)} este mês.`,
+      mensagem: `📊 Sua maior despesa é ${top.categoria}: R$ ${Number(top.total).toFixed(2)} este mês.`,
       acao_sugerida: `Compare preços e busque alternativas para reduzir gastos com ${top.categoria}.`,
       urgencia: 'baixa',
     });

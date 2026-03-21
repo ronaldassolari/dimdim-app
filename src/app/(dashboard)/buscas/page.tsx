@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { calcularMelhorOpcao, type PontosCalculation } from '@/lib/pontos-programs';
+import { useToast } from '@/components/ToastContext';
 
 interface Resultado {
   loja: string;
@@ -59,7 +61,42 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function getStoreSearchUrl(loja: string, query: string): string {
+  const q = encodeURIComponent(query);
+  const lojaLower = loja.toLowerCase();
+  if (lojaLower.includes('magalu') || lojaLower.includes('magazine luiza')) {
+    return `https://www.magazineluiza.com.br/busca/${q}`;
+  }
+  if (lojaLower.includes('amazon')) {
+    return `https://www.amazon.com.br/s?k=${q}`;
+  }
+  if (lojaLower.includes('shopee')) {
+    return `https://shopee.com.br/search?keyword=${q}`;
+  }
+  if (lojaLower.includes('mercado livre')) {
+    return `https://lista.mercadolivre.com.br/${q}`;
+  }
+  if (lojaLower.includes('kabum')) {
+    return `https://www.kabum.com.br/busca/${q}`;
+  }
+  if (lojaLower.includes('americanas')) {
+    return `https://www.americanas.com.br/busca/${q}`;
+  }
+  if (lojaLower.includes('casas bahia')) {
+    return `https://www.casasbahia.com.br/busca/${q}`;
+  }
+  return '';
+}
+
+function getMedalEmoji(index: number): string {
+  if (index === 0) return '\u{1F947}';
+  if (index === 1) return '\u{1F948}';
+  if (index === 2) return '\u{1F949}';
+  return '';
+}
+
 export default function BuscasPage() {
+  const toast = useToast();
   const [savedBuscas, setSavedBuscas] = useState<Busca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -71,6 +108,7 @@ export default function BuscasPage() {
   const [loadingCard, setLoadingCard] = useState(false);
   const [searchStatus, setSearchStatus] = useState<'real' | null>(null);
   const [searchFonte, setSearchFonte] = useState('');
+  const [expandedPontos, setExpandedPontos] = useState<Record<number, boolean>>({});
 
   const fetchBuscas = useCallback(async () => {
     setLoading(true);
@@ -99,6 +137,7 @@ export default function BuscasPage() {
     setSearchStatus(null);
     setSearchFonte('');
     setCurrentProduct(searchTerm.trim());
+    setExpandedPontos({});
     try {
       const res = await fetch('/api/buscas', {
         method: 'POST',
@@ -134,7 +173,7 @@ export default function BuscasPage() {
         }
       }
     } catch {
-      alert('Erro ao buscar precos. Tente novamente.');
+      toast.error('Erro ao buscar precos. Tente novamente.');
     } finally {
       setSearching(false);
     }
@@ -146,7 +185,7 @@ export default function BuscasPage() {
       if (!res.ok) throw new Error('Erro ao deletar');
       setSavedBuscas((prev) => prev.filter((b) => b.id !== id));
     } catch {
-      alert('Erro ao excluir busca.');
+      toast.error('Erro ao excluir busca.');
     }
   };
 
@@ -155,6 +194,11 @@ export default function BuscasPage() {
   };
 
   const minPrice = currentResults ? Math.min(...currentResults.filter((r) => r.disponivel).map((r) => r.preco)) : 0;
+
+  // Calculate points comparison for each result
+  const getPontosForResult = (preco: number): PontosCalculation[] => {
+    return calcularMelhorOpcao(preco);
+  };
 
   if (loading) {
     return (
@@ -249,7 +293,7 @@ export default function BuscasPage() {
               opacity: searching ? 0.6 : 1,
             }}
           >
-            {searching ? 'Buscando...' : '🔍 Buscar'}
+            {searching ? 'Buscando...' : '\u{1F50D} Buscar'}
           </button>
         </div>
       </div>
@@ -293,9 +337,16 @@ export default function BuscasPage() {
               </span>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
             {currentResults.map((result, i) => {
               const isCheapest = result.disponivel && result.preco === minPrice;
+              const pontosRanking = getPontosForResult(result.preco);
+              const top3 = pontosRanking.slice(0, 3);
+              const rest = pontosRanking.slice(3);
+              const isExpanded = expandedPontos[i] || false;
+              const storeUrl = getStoreSearchUrl(result.loja, currentProduct);
+              const ofertaUrl = result.url || result.link || storeUrl;
+
               return (
                 <div
                   key={i}
@@ -305,6 +356,8 @@ export default function BuscasPage() {
                     border: isCheapest ? '2px solid #00C853' : undefined,
                     position: 'relative',
                     opacity: result.disponivel ? 1 : 0.5,
+                    display: 'flex',
+                    flexDirection: 'column',
                   }}
                 >
                   {isCheapest && (
@@ -341,22 +394,35 @@ export default function BuscasPage() {
                       <span style={{ color: '#EF4444', fontWeight: 600, textDecoration: 'none', marginLeft: 6 }}>-{result.desconto_percent}%</span>
                     </p>
                   )}
-                  <p
-                    style={{
-                      fontSize: 24,
-                      fontWeight: 800,
-                      color: isCheapest ? '#00C853' : 'var(--text)',
-                      marginBottom: 8,
-                    }}
-                  >
-                    {formatMoney(result.preco)}
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <p
+                      style={{
+                        fontSize: 24,
+                        fontWeight: 800,
+                        color: isCheapest ? '#00C853' : 'var(--text)',
+                        margin: 0,
+                      }}
+                    >
+                      {formatMoney(result.preco)}
+                    </p>
+                    <span style={{
+                      fontSize: 9,
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: 6,
+                      background: '#FFF3E0',
+                      color: '#E65100',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      Preco aproximado
+                    </span>
+                  </div>
                   {!result.disponivel && (
                     <span style={{ fontSize: 12, color: '#EF4444', fontWeight: 600 }}>Indisponivel</span>
                   )}
                   {result.disponivel && (
                     <a
-                      href={result.url || result.link}
+                      href={ofertaUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -364,10 +430,137 @@ export default function BuscasPage() {
                         color: '#7C3AED',
                         fontWeight: 600,
                         textDecoration: 'none',
+                        marginBottom: 12,
                       }}
                     >
-                      Ver oferta →
+                      Ver oferta \u2192
                     </a>
+                  )}
+
+                  {/* Points comparison section */}
+                  {result.disponivel && (
+                    <div style={{
+                      marginTop: 'auto',
+                      borderTop: '1px solid #F3F4F6',
+                      paddingTop: 12,
+                    }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Programas de Pontos
+                      </p>
+
+                      {/* Top 3 options */}
+                      {top3.map((opt, idx) => {
+                        const isBest = idx === 0;
+                        return (
+                          <div
+                            key={opt.id}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              marginBottom: 6,
+                              background: isBest ? 'linear-gradient(135deg, #FFFBEB, #FEF3C7)' : '#F9FAFB',
+                              border: isBest ? '1.5px solid #F59E0B' : '1px solid #F3F4F6',
+                              position: 'relative',
+                            }}
+                          >
+                            {isBest && (
+                              <span style={{
+                                position: 'absolute',
+                                top: -8,
+                                right: 8,
+                                background: '#F59E0B',
+                                color: 'white',
+                                fontSize: 9,
+                                fontWeight: 800,
+                                padding: '1px 6px',
+                                borderRadius: 6,
+                              }}>
+                                MELHOR OPCAO
+                              </span>
+                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 14 }}>{getMedalEmoji(idx)}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {opt.loja} - {opt.nome}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                  {opt.pontosGanhos.toLocaleString('pt-BR')} pts ({opt.taxa}x) = {formatMoney(opt.valorPontos)}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: isBest ? '#D97706' : '#00C853' }}>
+                                  {formatMoney(opt.precoFinal)}
+                                </div>
+                                <div style={{ fontSize: 10, color: '#00C853', fontWeight: 600 }}>
+                                  -{formatMoney(opt.economia)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Expandable rest */}
+                      {rest.length > 0 && (
+                        <>
+                          <button
+                            onClick={() => setExpandedPontos(prev => ({ ...prev, [i]: !prev[i] }))}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: 8,
+                              border: '1px solid #E5E7EB',
+                              background: 'white',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: '#7C3AED',
+                              cursor: 'pointer',
+                              transition: 'all 200ms',
+                              marginTop: 4,
+                            }}
+                          >
+                            {isExpanded ? 'Ocultar outras opcoes' : `Ver outras ${rest.length} opcoes`} {isExpanded ? '\u25B2' : '\u25BC'}
+                          </button>
+
+                          {isExpanded && (
+                            <div style={{ marginTop: 6 }}>
+                              {rest.map((opt) => (
+                                <div
+                                  key={opt.id}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: 8,
+                                    marginBottom: 4,
+                                    background: '#F9FAFB',
+                                    border: '1px solid #F3F4F6',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {opt.loja} - {opt.nome}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                                        {opt.pontosGanhos.toLocaleString('pt-BR')} pts ({opt.taxa}x) = {formatMoney(opt.valorPontos)}
+                                      </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+                                        {formatMoney(opt.precoFinal)}
+                                      </div>
+                                      <div style={{ fontSize: 9, color: '#00C853', fontWeight: 600 }}>
+                                        -{formatMoney(opt.economia)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -426,7 +619,7 @@ export default function BuscasPage() {
       {/* Empty state - no search yet */}
       {!currentResults && !searching && savedBuscas.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: '56px 24px', marginBottom: 24 }}>
-          <div style={{ fontSize: 72, marginBottom: 16 }}>🔍</div>
+          <div style={{ fontSize: 72, marginBottom: 16 }}>{'\u{1F50D}'}</div>
           <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Encontre o melhor preco</h3>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 400, margin: '0 auto' }}>
             Pesquise qualquer produto e compararemos os precos em diversas lojas para voce encontrar a melhor oferta.
@@ -452,7 +645,7 @@ export default function BuscasPage() {
                 }}
               >
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: '#F3E8FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                  🛒
+                  {'\u{1F6D2}'}
                 </div>
                 <div style={{ flex: 1, minWidth: 160 }}>
                   <p style={{ fontSize: 15, fontWeight: 700 }}>{busca.produto}</p>
@@ -498,7 +691,7 @@ export default function BuscasPage() {
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
                   title="Excluir"
                 >
-                  🗑️
+                  {'\u{1F5D1}\uFE0F'}
                 </button>
               </div>
             ))}

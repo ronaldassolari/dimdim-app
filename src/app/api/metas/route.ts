@@ -5,7 +5,15 @@ import { withAuth } from '@/lib/api-handler';
 export const GET = withAuth(async (_request, session) => {
   const { rows: metas } = await sql`SELECT * FROM metas WHERE user_id = ${session.id} AND ativa = 1 ORDER BY created_at DESC`;
 
-  return NextResponse.json(metas);
+  // Ensure numeric fields are returned as numbers (Vercel Postgres returns DECIMAL as strings)
+  const parsed = metas.map(m => ({
+    ...m,
+    valor_alvo: Number(m.valor_alvo),
+    valor_atual: Number(m.valor_atual),
+    ativa: Number(m.ativa),
+  }));
+
+  return NextResponse.json(parsed);
 });
 
 export const POST = withAuth(async (request, session) => {

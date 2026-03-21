@@ -17,8 +17,9 @@ export async function seed() {
   const hashedPassword = bcryptjs.hashSync('dimdim2026', 10);
 
   // User Ronald
-  await sql`INSERT INTO users (username, password, nome, email, whatsapp, plano, plano_expira, modo_bot, horario_lembrete, horario_relatorio)
-    VALUES ('ronald', ${hashedPassword}, 'Ronald Assolari', 'ronaldgodlove@hotmail.com', '+554196444719', 'PRO', '2026-04-17', 'normal', '08:00', 1)`;
+  const { rows: userRows } = await sql`INSERT INTO users (username, password, nome, email, whatsapp, plano, plano_expira, modo_bot, horario_lembrete, horario_relatorio)
+    VALUES ('ronald', ${hashedPassword}, 'Ronald Assolari', 'ronaldgodlove@hotmail.com', '+554196444719', 'PRO', '2026-04-17', 'normal', '08:00', 1) RETURNING id`;
+  const userId = userRows[0].id as number;
 
   // Categories
   const categorias = [
@@ -36,31 +37,31 @@ export async function seed() {
   }
 
   // 15 Transactions
-  const transacoes: [number, string, number, string, string, string, string][] = [
-    [1, 'Salário março', 8500, 'RECEITA', 'Salário', 'RECEBIDO', '2026-03-05'],
-    [1, 'Freelance design', 2500, 'RECEITA', 'Freelance', 'RECEBIDO', '2026-03-10'],
-    [1, 'Aluguel', 2200, 'GASTO', 'Moradia', 'PAGO', '2026-03-05'],
-    [1, 'Supermercado Carrefour', 487.30, 'GASTO', 'Alimentação', 'PAGO', '2026-03-03'],
-    [1, 'Uber mensal', 156.80, 'GASTO', 'Transporte', 'PAGO', '2026-03-08'],
-    [1, 'Netflix + Spotify', 69.80, 'GASTO', 'Assinatura', 'PAGO', '2026-03-01'],
-    [1, 'Farmácia Droga Raia', 89.50, 'GASTO', 'Saúde', 'PAGO', '2026-03-07'],
-    [1, 'Curso Udemy React', 29.90, 'GASTO', 'Educação', 'PAGO', '2026-03-12'],
-    [1, 'Gasolina Shell', 250, 'GASTO', 'Combustível', 'PAGO', '2026-03-09'],
-    [1, 'iFood restaurante', 67.40, 'GASTO', 'Alimentação', 'PAGO', '2026-03-14'],
-    [1, 'Conta de luz', 185, 'GASTO', 'Moradia', 'A_PAGAR', '2026-03-20'],
-    [1, 'Academia Smart Fit', 99.90, 'GASTO', 'Saúde', 'PAGO', '2026-03-01'],
-    [1, 'Roupa Renner', 189.90, 'GASTO', 'Roupas', 'PAGO', '2026-03-11'],
-    [1, 'Projeto cliente X', 1500, 'RECEITA', 'Freelance', 'A_RECEBER', '2026-03-25'],
-    [1, 'Internet Vivo', 129.90, 'GASTO', 'Serviços', 'A_PAGAR', '2026-03-22'],
+  const transacoes: [string, number, string, string, string, string][] = [
+    ['Salário março', 8500, 'RECEITA', 'Salário', 'RECEBIDO', '2026-03-05'],
+    ['Freelance design', 2500, 'RECEITA', 'Freelance', 'RECEBIDO', '2026-03-10'],
+    ['Aluguel', 2200, 'GASTO', 'Moradia', 'PAGO', '2026-03-05'],
+    ['Supermercado Carrefour', 487.30, 'GASTO', 'Alimentação', 'PAGO', '2026-03-03'],
+    ['Uber mensal', 156.80, 'GASTO', 'Transporte', 'PAGO', '2026-03-08'],
+    ['Netflix + Spotify', 69.80, 'GASTO', 'Assinatura', 'PAGO', '2026-03-01'],
+    ['Farmácia Droga Raia', 89.50, 'GASTO', 'Saúde', 'PAGO', '2026-03-07'],
+    ['Curso Udemy React', 29.90, 'GASTO', 'Educação', 'PAGO', '2026-03-12'],
+    ['Gasolina Shell', 250, 'GASTO', 'Combustível', 'PAGO', '2026-03-09'],
+    ['iFood restaurante', 67.40, 'GASTO', 'Alimentação', 'PAGO', '2026-03-14'],
+    ['Conta de luz', 185, 'GASTO', 'Moradia', 'A_PAGAR', '2026-03-20'],
+    ['Academia Smart Fit', 99.90, 'GASTO', 'Saúde', 'PAGO', '2026-03-01'],
+    ['Roupa Renner', 189.90, 'GASTO', 'Roupas', 'PAGO', '2026-03-11'],
+    ['Projeto cliente X', 1500, 'RECEITA', 'Freelance', 'A_RECEBER', '2026-03-25'],
+    ['Internet Vivo', 129.90, 'GASTO', 'Serviços', 'A_PAGAR', '2026-03-22'],
   ];
   for (const t of transacoes) {
-    await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data) VALUES (${t[0]}, ${t[1]}, ${t[2]}, ${t[3]}, ${t[4]}, ${t[5]}, ${t[6]})`;
+    await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data) VALUES (${userId}, ${t[0]}, ${t[1]}, ${t[2]}, ${t[3]}, ${t[4]}, ${t[5]})`;
   }
 
   // 3 Cards
-  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (1, 'Nubank', 'Nubank', 'Mastercard', 'Black', 25000, 3450.60, 10, '#820AD1', 1.0, ${JSON.stringify(['Cashback'])})`;
-  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (1, 'C6', 'C6 Bank', 'Mastercard', 'Black', 15000, 1230, 15, '#1a1a2e', 2.5, ${JSON.stringify(['Livelo', 'TudoAzul'])})`;
-  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (1, 'Itaú', 'Itaú', 'Mastercard', 'Black', 50000, 890, 20, '#FF6600', 3.5, ${JSON.stringify(['Livelo', 'Smiles'])})`;
+  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (${userId}, 'Nubank', 'Nubank', 'Mastercard', 'Black', 25000, 3450.60, 10, '#820AD1', 1.0, ${JSON.stringify(['Cashback'])})`;
+  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (${userId}, 'C6', 'C6 Bank', 'Mastercard', 'Black', 15000, 1230, 15, '#1a1a2e', 2.5, ${JSON.stringify(['Livelo', 'TudoAzul'])})`;
+  await sql`INSERT INTO cartoes (user_id, apelido, banco, bandeira, nivel, limite, gasto_mes, vencimento, cor, pontos_por_real, programas_pontos) VALUES (${userId}, 'Itaú', 'Itaú', 'Mastercard', 'Black', 50000, 890, 20, '#FF6600', 3.5, ${JSON.stringify(['Livelo', 'Smiles'])})`;
 
   // 13 Programs
   const programas: [string, string, string, string, string, string, string][] = [
@@ -83,31 +84,36 @@ export async function seed() {
   }
 
   // User points
-  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (1, 1, 0, '2027-12-31', 1)`;
-  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (1, 2, 0, '2027-12-31', 1)`;
-  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (1, 5, 0, NULL, 1)`;
+  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (${userId}, 1, 0, '2027-12-31', 1)`;
+  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (${userId}, 2, 0, '2027-12-31', 1)`;
+  await sql`INSERT INTO analise_pontos (user_id, programa_id, saldo, validade, interesse) VALUES (${userId}, 5, 0, NULL, 1)`;
 
-  // 2 Goals
-  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (1, 'Viagem Europa', 15000, 0, 'Viagens', '2028-03-18')`;
-  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (1, 'Reserva de Emergência', 30000, 0, 'Investimentos', '2027-09-18')`;
+  // 7 Goals with varied progress
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'Viagem Europa', 15000, 4500, 'Viagens', '2027-06-01')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'Reserva de Emergência', 30000, 12000, 'Emergência', '2027-09-18')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'MacBook Pro M4', 18000, 18000, 'Tecnologia', '2026-12-01')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'MBA FGV', 45000, 5000, 'Educação', '2028-01-15')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'Entrada Apartamento', 80000, 62000, 'Moradia', '2027-12-31')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'Carro Novo', 55000, 8000, 'Veículo', '2028-06-01')`;
+  await sql`INSERT INTO metas (user_id, titulo, valor_alvo, valor_atual, categoria, prazo) VALUES (${userId}, 'Fundo Investimentos', 100000, 23500, 'Investimentos', '2029-01-01')`;
 
   // 5 Saved searches
-  const buscas: [number, string, string, number, string][] = [
-    [1, 'iPhone 15 Pro Max', '[{"loja":"Amazon","preco":7499},{"loja":"Magalu","preco":7899},{"loja":"Kabum","preco":7299}]', 7299, 'Kabum'],
-    [1, 'TV Samsung 55 4K', '[{"loja":"Casas Bahia","preco":2499},{"loja":"Magalu","preco":2599},{"loja":"Amazon","preco":2399}]', 2399, 'Amazon'],
-    [1, 'AirPods Pro 2', '[{"loja":"Amazon","preco":1899},{"loja":"Fast Shop","preco":2099},{"loja":"Kabum","preco":1799}]', 1799, 'Kabum'],
-    [1, 'Notebook Dell i7', '[{"loja":"Dell","preco":5499},{"loja":"Kabum","preco":5299},{"loja":"Amazon","preco":5399}]', 5299, 'Kabum'],
-    [1, 'Cadeira Gamer ThunderX3', '[{"loja":"Kabum","preco":1299},{"loja":"Pichau","preco":1349},{"loja":"Amazon","preco":1399}]', 1299, 'Kabum'],
+  const buscas: [string, string, number, string][] = [
+    ['iPhone 15 Pro Max', '[{"loja":"Amazon","preco":7499},{"loja":"Magalu","preco":7899},{"loja":"Kabum","preco":7299}]', 7299, 'Kabum'],
+    ['TV Samsung 55 4K', '[{"loja":"Casas Bahia","preco":2499},{"loja":"Magalu","preco":2599},{"loja":"Amazon","preco":2399}]', 2399, 'Amazon'],
+    ['AirPods Pro 2', '[{"loja":"Amazon","preco":1899},{"loja":"Fast Shop","preco":2099},{"loja":"Kabum","preco":1799}]', 1799, 'Kabum'],
+    ['Notebook Dell i7', '[{"loja":"Dell","preco":5499},{"loja":"Kabum","preco":5299},{"loja":"Amazon","preco":5399}]', 5299, 'Kabum'],
+    ['Cadeira Gamer ThunderX3', '[{"loja":"Kabum","preco":1299},{"loja":"Pichau","preco":1349},{"loja":"Amazon","preco":1399}]', 1299, 'Kabum'],
   ];
   for (const b of buscas) {
-    await sql`INSERT INTO buscas_preco (user_id, produto, resultados, menor_preco, loja_menor, monitorar) VALUES (${b[0]}, ${b[1]}, ${b[2]}, ${b[3]}, ${b[4]}, 1)`;
+    await sql`INSERT INTO buscas_preco (user_id, produto, resultados, menor_preco, loja_menor, monitorar) VALUES (${userId}, ${b[0]}, ${b[1]}, ${b[2]}, ${b[3]}, 1)`;
   }
 
   // Family
-  await sql`INSERT INTO contas_familia (dono_id, nome_membro, email_membro, codigo_convite, status) VALUES (1, 'Maria Santos', 'maria@email.com', 'DIMDIM-ABC123', 'PENDENTE')`;
+  await sql`INSERT INTO contas_familia (dono_id, nome_membro, email_membro, codigo_convite, status) VALUES (${userId}, 'Maria Santos', 'maria@email.com', 'DIMDIM-ABC123', 'PENDENTE')`;
 
   // Subscription
-  await sql`INSERT INTO assinaturas (user_id, plano, valor, periodo, status, inicio, fim) VALUES (1, 'PRO', 0, 'mensal', 'ATIVO', '2026-03-18', '2026-04-17')`;
+  await sql`INSERT INTO assinaturas (user_id, plano, valor, periodo, status, inicio, fim) VALUES (${userId}, 'PRO', 0, 'mensal', 'ATIVO', '2026-03-18', '2026-04-17')`;
 
   // 30 Lessons with real financial education content
   let ordem = 1;
@@ -124,15 +130,19 @@ export async function seed() {
     await sql`INSERT INTO aulas (trilha, numero, titulo, conteudo, quiz, badge_nome, ordem) VALUES ('avancado', ${i + 1}, ${a.titulo}, ${a.conteudo}, ${JSON.stringify(a.quiz)}, ${i === 9 ? 'Avançado Completo' : null}, ${ordem++})`;
   }
 
-  // Progress: 3 beginner lessons
-  await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (1, 1, 1, 3, '2026-03-10')`;
-  await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (1, 2, 1, 2, '2026-03-12')`;
-  await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (1, 3, 1, 3, '2026-03-15')`;
+  // Progress: 3 beginner lessons (aula IDs are sequential starting from 1)
+  // We need the actual aula IDs - get the first 3 aulas
+  const { rows: aulaIds } = await sql`SELECT id FROM aulas WHERE trilha = 'iniciante' ORDER BY numero ASC LIMIT 3`;
+  if (aulaIds.length >= 3) {
+    await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (${userId}, ${aulaIds[0].id}, 1, 3, '2026-03-10')`;
+    await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (${userId}, ${aulaIds[1].id}, 1, 2, '2026-03-12')`;
+    await sql`INSERT INTO progresso_aulas (user_id, aula_id, concluida, quiz_score, data_conclusao) VALUES (${userId}, ${aulaIds[2].id}, 1, 3, '2026-03-15')`;
+  }
 
   // Alerts
-  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (1, 'pontos', 'Bônus Livelo → Smiles', 'Transferência com 80% de bônus até domingo!')`;
-  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (1, 'preco', 'TV Samsung caiu R$200', 'O produto que você monitora baixou de preço!')`;
-  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (1, 'meta', 'Meta Viagem Europa', 'Você está 40% mais perto do seu objetivo!')`;
+  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (${userId}, 'pontos', 'Bônus Livelo → Smiles', 'Transferência com 80% de bônus até domingo!')`;
+  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (${userId}, 'preco', 'TV Samsung caiu R$200', 'O produto que você monitora baixou de preço!')`;
+  await sql`INSERT INTO alertas (user_id, tipo, titulo, mensagem) VALUES (${userId}, 'meta', 'Meta Viagem Europa', 'Você está 40% mais perto do seu objetivo!')`;
 
   seeded = true;
   console.log('✅ Seed data inserted successfully');

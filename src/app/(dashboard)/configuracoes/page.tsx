@@ -2,6 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Modal from '@/components/Modal';
+import { useToast } from '@/components/ToastContext';
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return `+55 (${digits}`;
+  if (digits.length <= 7) return `+55 (${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
 
 interface UserConfig {
   id: number;
@@ -61,6 +71,7 @@ const FEATURES_PRO = [
 ];
 
 export default function ConfiguracoesPage() {
+  const toast = useToast();
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -72,11 +83,15 @@ export default function ConfiguracoesPage() {
   // Form states
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
   const [whatsapp, setWhatsapp] = useState('');
   const [modoBotForm, setModoBotForm] = useState('normal');
   const [humorBotForm, setHumorBotForm] = useState('amigavel');
   const [horarioLembrete, setHorarioLembrete] = useState('09:00');
   const [horarioRelatorio, setHorarioRelatorio] = useState(1);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const emailValid = email === '' || emailRegex.test(email);
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -104,7 +119,34 @@ export default function ConfiguracoesPage() {
     fetchConfig();
   }, [fetchConfig]);
 
+  // Load dark mode preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('dimdim-theme');
+    const isDark = saved === 'dark';
+    setDarkMode(isDark);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('dimdim-theme', newMode ? 'dark' : 'light');
+    if (newMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
   const savePerfil = async () => {
+    if (email && !emailRegex.test(email)) {
+      setEmailTouched(true);
+      return;
+    }
     setSaving(true);
     setSaveSuccess(false);
     try {
@@ -118,8 +160,9 @@ export default function ConfiguracoesPage() {
       setConfig(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      toast.success('Perfil salvo com sucesso!');
     } catch {
-      alert('Erro ao salvar configuracoes.');
+      toast.error('Erro ao salvar configuracoes.');
     } finally {
       setSaving(false);
     }
@@ -143,8 +186,9 @@ export default function ConfiguracoesPage() {
       setConfig(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      toast.success('Configuracoes do bot salvas!');
     } catch {
-      alert('Erro ao salvar configuracoes do bot.');
+      toast.error('Erro ao salvar configuracoes do bot.');
     } finally {
       setSaving(false);
     }
@@ -195,11 +239,44 @@ export default function ConfiguracoesPage() {
   return (
     <div className="fade-in">
       {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Configuracoes</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Personalize sua experiencia no DIMDIM
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Configuracoes</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+            Personalize sua experiencia no DIMDIM
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>{darkMode ? '🌙' : '☀️'}</span>
+          <button
+            onClick={toggleDarkMode}
+            style={{
+              width: 52,
+              height: 28,
+              borderRadius: 14,
+              background: darkMode ? '#7C3AED' : '#E5E7EB',
+              position: 'relative',
+              cursor: 'pointer',
+              border: 'none',
+              transition: 'all 200ms',
+            }}
+            title={darkMode ? 'Modo claro' : 'Modo escuro'}
+          >
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                background: 'white',
+                position: 'absolute',
+                top: 3,
+                left: darkMode ? 27 : 3,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                transition: 'all 200ms',
+              }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -294,31 +371,48 @@ export default function ConfiguracoesPage() {
             </div>
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid var(--border)',
-                  fontSize: 15,
-                  outline: 'none',
-                  transition: 'border-color 200ms',
-                  boxSizing: 'border-box',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = '#7C3AED')}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    paddingRight: 40,
+                    borderRadius: 12,
+                    border: `1px solid ${emailTouched && !emailValid ? '#EF4444' : 'var(--border)'}`,
+                    fontSize: 15,
+                    outline: 'none',
+                    transition: 'border-color 200ms',
+                    boxSizing: 'border-box',
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = emailTouched && !emailValid ? '#EF4444' : '#7C3AED')}
+                />
+                {emailTouched && email !== '' && (
+                  <span style={{
+                    position: 'absolute',
+                    right: 14,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: 18,
+                  }}>
+                    {emailValid ? '✅' : '❌'}
+                  </span>
+                )}
+              </div>
+              {emailTouched && !emailValid && email !== '' && (
+                <p style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>Email invalido</p>
+              )}
             </div>
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>WhatsApp</label>
               <input
                 type="text"
                 value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                placeholder="+55 11 99999-9999"
+                onChange={(e) => setWhatsapp(formatPhone(e.target.value))}
+                placeholder="+55 (11) 99999-9999"
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -336,8 +430,8 @@ export default function ConfiguracoesPage() {
             <button
               className="btn-primary"
               onClick={savePerfil}
-              disabled={saving}
-              style={{ padding: '14px 32px', fontSize: 15, alignSelf: 'flex-start', opacity: saving ? 0.6 : 1 }}
+              disabled={saving || (email !== '' && !emailValid)}
+              style={{ padding: '14px 32px', fontSize: 15, alignSelf: 'flex-start', opacity: saving || (email !== '' && !emailValid) ? 0.6 : 1 }}
             >
               {saving ? 'Salvando...' : 'Salvar Perfil'}
             </button>

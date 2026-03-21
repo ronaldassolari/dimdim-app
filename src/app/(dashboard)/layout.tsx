@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import NotificationBell from '@/components/NotificationBell';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
@@ -28,7 +29,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar user={user} />
       <main role="main" className="main-content" style={{ flex: 1, marginLeft: 240, padding: '24px 32px', maxWidth: '100%', overflow: 'auto' }}>
-        {children}
+        {/* Top bar with notification bell */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            marginBottom: 8,
+            gap: 12,
+          }}
+        >
+          <NotificationBell />
+        </div>
+        <div className="animate-fadeIn">
+          {children}
+        </div>
       </main>
     </div>
   );
