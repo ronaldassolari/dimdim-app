@@ -185,7 +185,7 @@ export default function FamiliaPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Familia</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Família</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
             Gerencie os membros do seu plano familiar
           </p>
@@ -389,7 +389,7 @@ export default function FamiliaPage() {
             <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
             <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Convite enviado!</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 24 }}>
-              Compartilhe o codigo abaixo com {inviteResult.nome_membro}:
+              Compartilhe o código abaixo com {inviteResult.nome_membro}:
             </p>
 
             <div
@@ -407,7 +407,7 @@ export default function FamiliaPage() {
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(
-                  `Voce foi convidado para o DimDim Familia! Use o codigo: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`
+                  `Você foi convidado para o DimDim Família! Use o código: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -430,7 +430,7 @@ export default function FamiliaPage() {
 
               <button
                 onClick={() => {
-                  const text = `Voce foi convidado para o DimDim Familia! Use o codigo: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`;
+                  const text = `Você foi convidado para o DimDim Família! Use o código: ${inviteResult.codigo_convite} para entrar. Baixe em: ${APP_URL}`;
                   navigator.clipboard.writeText(text).then(() => {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2500);
