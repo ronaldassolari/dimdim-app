@@ -93,7 +93,9 @@ export const GET = withAuth(async (request, session) => {
     SELECT COALESCE(SUM(saldo), 0) as saldo FROM analise_pontos WHERE user_id = ${session.id}
   `;
   const pontosTotal = pontosRows[0] as SaldoRow;
-  const pontosValor = Math.round((Number(pontosTotal.saldo) || 0) * 0.01 * 100) / 100;
+  // Average point value ~0.02 (weighted across programs: Livelo, Esfera, etc.)
+  const pontosValor = Math.round((Number(pontosTotal.saldo) || 0) * 0.02 * 100) / 100;
+  const economiaMes = Math.round((saldo.receitas - saldo.gastos) * 100) / 100;
 
   // Personalized insights based on actual data
   const insights: string[] = [];
@@ -198,6 +200,7 @@ export const GET = withAuth(async (request, session) => {
     grafico,
     metas: metasComProgresso,
     pontos: { total: Number(pontosTotal.saldo) || 0, valorReais: pontosValor },
+    economiaMes,
     insights: insights.slice(0, 4),
     alertas: Number(alertas.total),
   });

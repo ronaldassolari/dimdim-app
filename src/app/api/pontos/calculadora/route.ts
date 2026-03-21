@@ -39,14 +39,29 @@ export async function GET(request: NextRequest) {
       cartoes = rows as Cartao[];
     }
 
+    // Points value varies by program: Livelo ~0.02, Esfera ~0.025, Smiles ~0.02, default 0.01
+    const PONTOS_VALOR: Record<string, number> = {
+      'livelo': 0.02, 'esfera': 0.025, 'smiles': 0.02, 'azul': 0.05,
+      'latam': 0.03, 'dotz': 0.015, 'cashback': 1.0, 'default': 0.01,
+    };
+    const getValorPonto = (banco: string) => {
+      const b = (banco || '').toLowerCase();
+      for (const [key, val] of Object.entries(PONTOS_VALOR)) {
+        if (b.includes(key)) return val;
+      }
+      return PONTOS_VALOR.default;
+    };
+
     const ranking = cartoes.map((cartao) => {
       const pontosGanhos = Math.round(valor * Number(cartao.pontos_por_real));
-      const valorEquivalente = Number((pontosGanhos * 0.01).toFixed(2));
+      const valorPorPonto = getValorPonto(cartao.banco || cartao.apelido || '');
+      const valorEquivalente = Number((pontosGanhos * valorPorPonto).toFixed(2));
+      const precoFinal = Number((valor - valorEquivalente).toFixed(2));
       return {
         cartao_id: cartao.id, apelido: cartao.apelido, banco: cartao.banco,
-        pontos_por_real: Number(cartao.pontos_por_real), pontosGanhos, valorEquivalente,
+        pontos_por_real: Number(cartao.pontos_por_real), pontosGanhos, valorEquivalente, precoFinal,
       };
-    }).sort((a, b) => b.pontosGanhos - a.pontosGanhos);
+    }).sort((a, b) => a.precoFinal - b.precoFinal);
 
     return NextResponse.json({ valor, categoria, ranking, melhorCartao: ranking[0] || null });
   } catch (error) {
