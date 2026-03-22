@@ -194,6 +194,62 @@ export async function initDb() {
   await sql`CREATE INDEX IF NOT EXISTS idx_familia_dono ON contas_familia(dono_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_progresso_user ON progresso_aulas(user_id)`;
 
+  // Assessor IA — Agenda/Compromissos
+  await sql`CREATE TABLE IF NOT EXISTS compromissos (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    titulo VARCHAR(255) NOT NULL,
+    data DATE NOT NULL,
+    hora VARCHAR(10),
+    descricao TEXT,
+    lembrete_minutos INTEGER DEFAULT 15,
+    lembrete_canal VARCHAR(20) DEFAULT 'whatsapp',
+    lembrete_enviado INTEGER DEFAULT 0,
+    recorrente VARCHAR(20),
+    created_at TIMESTAMP DEFAULT NOW()
+  )`;
+
+  // Assessor IA — Boletos
+  await sql`CREATE TABLE IF NOT EXISTS boletos (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    tipo VARCHAR(100) NOT NULL,
+    descricao VARCHAR(255),
+    valor DECIMAL(12,2) NOT NULL,
+    vencimento DATE NOT NULL,
+    lembrete_dias INTEGER DEFAULT 1,
+    lembrete_canal VARCHAR(20) DEFAULT 'whatsapp',
+    lembrete_enviado INTEGER DEFAULT 0,
+    pago INTEGER DEFAULT 0,
+    recorrente VARCHAR(20),
+    created_at TIMESTAMP DEFAULT NOW()
+  )`;
+
+  // Assessor IA — Preferências do Usuário (learning)
+  await sql`CREATE TABLE IF NOT EXISTS user_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    acao VARCHAR(100) NOT NULL,
+    escolha VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`;
+
+  // Assessor IA — Histórico de Conversas
+  await sql`CREATE TABLE IF NOT EXISTS conversas (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`;
+
+  await sql`CREATE INDEX IF NOT EXISTS idx_compromissos_user ON compromissos(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_compromissos_data ON compromissos(data)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_boletos_user ON boletos(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_boletos_venc ON boletos(vencimento)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_conversas_user ON conversas(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_preferences_user ON user_preferences(user_id)`;
+
   initialized = true;
 }
 

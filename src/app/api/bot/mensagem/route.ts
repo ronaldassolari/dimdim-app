@@ -4,7 +4,7 @@ import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 import { searchPrices } from '@/lib/price-search';
-import { extrairGasto, detectarIntencao } from '@/lib/nlp';
+import { extrairGasto, detectarIntencao, extrairCompromisso, extrairBoleto } from '@/lib/nlp';
 
 interface UserRow {
   id: number;
@@ -209,7 +209,81 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ resposta: texto, intencao: 'pontos' });
     }
 
-    // 5. Resposta geral
+    // 5. Agenda/Compromissos
+    if (intencao === 'agenda') {
+      const comp = extrairCompromisso(mensagem);
+      if (comp) {
+        const { rows: saved } = await sql`
+          INSERT INTO compromissos (user_id, titulo, data, hora, lembrete_minutos, lembrete_canal)
+          VALUES (${user.id}, ${comp.titulo}, ${comp.data}, ${comp.hora}, 15, 'whatsapp')
+          RETURNING *
+        `;
+        const ev = saved[0] as any;
+        const dataFmt = new Date(comp.data + 'T12:00:00').toLocaleDateString('pt-BR');
+        let resp = `📅 Compromisso salvo!\n\n*${comp.titulo}*\n📆 ${dataFmt}`;
+        if (comp.hora) resp += ` às ${comp.hora}`;
+        resp += `\n⏰ Lembrete: 15 min antes (WhatsApp)`;
+        resp += `\n\nQuer alterar o horário do lembrete? (5min, 30min, 1h)`;
+        return NextResponse.json({ resposta: resp, intencao: 'agenda', compromisso: ev });
+      }
+      // Listar compromissos
+      const { rows: comps } = await sql`
+        SELECT * FROM compromissos WHERE user_id = ${user.id} AND data >= CURRENT_DATE ORDER BY data, hora LIMIT 5
+      `;
+      if (comps.length > 0) {
+        let texto = '📅 *Seus próximos compromissos:*\n\n';
+        for (const c of comps) {
+          const r = c as any;
+          const d = new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR');
+          texto += `• ${r.titulo} — ${d}${r.hora ? ' às ' + r.hora : ''}\n`;
+        }
+        return NextResponse.json({ resposta: texto, intencao: 'agenda' });
+      }
+      return NextResponse.json({ resposta: '📅 Nenhum compromisso agendado. Diga algo como: "Reunião amanhã às 9h"', intencao: 'agenda' });
+    }
+
+    // 6. Boletos
+    if (intencao === 'boleto') {
+      const bol = extrairBoleto(mensagem);
+      if (bol && bol.tipo) {
+        if (bol.valor && bol.vencimento) {
+          const { rows: saved } = await sql`
+            INSERT INTO boletos (user_id, tipo, valor, vencimento, lembrete_dias)
+            VALUES (${user.id}, ${bol.tipo}, ${bol.valor}, ${bol.vencimento}, 1)
+            RETURNING *
+          `;
+          const b = saved[0] as any;
+          const vencFmt = new Date(bol.vencimento + 'T12:00:00').toLocaleDateString('pt-BR');
+          return NextResponse.json({
+            resposta: `💰 Boleto salvo!\n\n*${bol.tipo}*\n💵 R$ ${bol.valor.toFixed(2)}\n📆 Vence: ${vencFmt}\n⏰ Lembrete: 1 dia antes\n\nVou te avisar antes do vencimento!`,
+            intencao: 'boleto', boleto: b,
+          });
+        }
+        // Falta info — perguntar
+        let pergunta = `💰 Entendi que é sobre *${bol.tipo}*.`;
+        if (!bol.valor) pergunta += '\nQual o valor?';
+        if (!bol.vencimento) pergunta += '\nQuando vence?';
+        return NextResponse.json({ resposta: pergunta, intencao: 'boleto' });
+      }
+      // Listar boletos pendentes
+      const { rows: bols } = await sql`
+        SELECT * FROM boletos WHERE user_id = ${user.id} AND pago = 0 AND vencimento >= CURRENT_DATE ORDER BY vencimento LIMIT 5
+      `;
+      if (bols.length > 0) {
+        let texto = '💰 *Boletos pendentes:*\n\n';
+        for (const b of bols) {
+          const r = b as any;
+          const d = new Date(r.vencimento + 'T12:00:00').toLocaleDateString('pt-BR');
+          const diasRestantes = Math.ceil((new Date(r.vencimento).getTime() - Date.now()) / 86400000);
+          const urgente = diasRestantes <= 3 ? ' ⚠️ URGENTE' : '';
+          texto += `• ${r.tipo}: R$ ${Number(r.valor).toFixed(2)} — vence ${d}${urgente}\n`;
+        }
+        return NextResponse.json({ resposta: texto, intencao: 'boleto' });
+      }
+      return NextResponse.json({ resposta: '💰 Nenhum boleto pendente! Para adicionar: "Conta de luz R$150 vence dia 15"', intencao: 'boleto' });
+    }
+
+    // 7. Resposta geral
     const resposta = gerarResposta(mensagem, user.modo_bot, user.humor_bot, user.nome);
     return NextResponse.json({ resposta, intencao: 'geral' });
   } catch (error) {
