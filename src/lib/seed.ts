@@ -8,18 +8,23 @@ export async function seed() {
   if (seeded) return;
   await initDb();
 
+  let userId: number;
   const { rows } = await sql`SELECT id FROM users WHERE username = 'ronald'`;
   if (rows.length > 0) {
-    seeded = true;
-    return;
+    userId = rows[0].id as number;
+    const { rows: metasCheck } = await sql`SELECT COUNT(*) as c FROM metas WHERE user_id = ${userId}`;
+    const { rows: aulasCheck } = await sql`SELECT COUNT(*) as c FROM aulas`;
+    if (Number(metasCheck[0].c) >= 5 && Number(aulasCheck[0].c) >= 10) {
+      seeded = true;
+      return;
+    }
+    // Data incomplete — continue to seed missing data
+  } else {
+    const hashedPassword = bcryptjs.hashSync('dimdim2026', 10);
+    const { rows: userRows } = await sql`INSERT INTO users (username, password, nome, email, whatsapp, plano, plano_expira, modo_bot, horario_lembrete, horario_relatorio)
+      VALUES ('ronald', ${hashedPassword}, 'Ronald Assolari', 'ronaldgodlove@hotmail.com', '+554196444719', 'PRO', '2026-04-17', 'normal', '08:00', 1) RETURNING id`;
+    userId = userRows[0].id as number;
   }
-
-  const hashedPassword = bcryptjs.hashSync('dimdim2026', 10);
-
-  // User Ronald
-  const { rows: userRows } = await sql`INSERT INTO users (username, password, nome, email, whatsapp, plano, plano_expira, modo_bot, horario_lembrete, horario_relatorio)
-    VALUES ('ronald', ${hashedPassword}, 'Ronald Assolari', 'ronaldgodlove@hotmail.com', '+554196444719', 'PRO', '2026-04-17', 'normal', '08:00', 1) RETURNING id`;
-  const userId = userRows[0].id as number;
 
   // Categories
   const categorias = [
