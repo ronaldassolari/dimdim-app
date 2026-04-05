@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { calcularMelhorOpcao, type PontosCalculation } from '@/lib/pontos-programs';
 import { useToast } from '@/components/ToastContext';
 
@@ -110,6 +110,13 @@ export default function BuscasPage() {
   const [searchFonte, setSearchFonte] = useState('');
   const [expandedPontos, setExpandedPontos] = useState<Record<number, boolean>>({});
 
+  // Advanced filter state
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterMinPrice, setFilterMinPrice] = useState('');
+  const [filterMaxPrice, setFilterMaxPrice] = useState('');
+  const [filterSort, setFilterSort] = useState<'relevante' | 'menor_preco' | 'maior_avaliacao'>('relevante');
+  const [filterLojas, setFilterLojas] = useState<string[]>([]);
+
   const fetchBuscas = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -138,6 +145,10 @@ export default function BuscasPage() {
     setSearchFonte('');
     setCurrentProduct(searchTerm.trim());
     setExpandedPontos({});
+    setFilterMinPrice('');
+    setFilterMaxPrice('');
+    setFilterSort('relevante');
+    setFilterLojas([]);
     try {
       const res = await fetch('/api/buscas', {
         method: 'POST',
@@ -194,6 +205,69 @@ export default function BuscasPage() {
   };
 
   const minPrice = currentResults ? Math.min(...currentResults.filter((r) => r.disponivel).map((r) => r.preco)) : 0;
+
+  // Deduplicate results by loja + preco (keep first occurrence)
+  const deduplicatedResults = useMemo(() => {
+    if (!currentResults) return null;
+    const seen = new Set<string>();
+    return currentResults.filter((r) => {
+      const key = `${r.loja}-${r.preco}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [currentResults]);
+
+  // Unique list of stores from current results
+  const availableLojas = useMemo(() => {
+    if (!deduplicatedResults) return [];
+    return Array.from(new Set(deduplicatedResults.map((r) => r.loja))).sort();
+  }, [deduplicatedResults]);
+
+  // Apply filters + sort
+  const filteredResults = useMemo(() => {
+    if (!deduplicatedResults) return null;
+    let items = [...deduplicatedResults];
+
+    const minP = filterMinPrice !== '' ? parseFloat(filterMinPrice) : null;
+    const maxP = filterMaxPrice !== '' ? parseFloat(filterMaxPrice) : null;
+
+    if (minP !== null && !isNaN(minP)) items = items.filter((r) => r.preco >= minP);
+    if (maxP !== null && !isNaN(maxP)) items = items.filter((r) => r.preco <= maxP);
+    if (filterLojas.length > 0) items = items.filter((r) => filterLojas.includes(r.loja));
+
+    if (filterSort === 'menor_preco') {
+      items = items.sort((a, b) => a.preco - b.preco);
+    } else if (filterSort === 'maior_avaliacao') {
+      // Since we don't have rating data, put items with discounts first as a proxy
+      items = items.sort((a, b) => (b.desconto_percent || 0) - (a.desconto_percent || 0));
+    }
+    // 'relevante' keeps original order
+
+    return items;
+  }, [deduplicatedResults, filterMinPrice, filterMaxPrice, filterLojas, filterSort]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterMinPrice !== '') count++;
+    if (filterMaxPrice !== '') count++;
+    if (filterSort !== 'relevante') count++;
+    if (filterLojas.length > 0) count++;
+    return count;
+  }, [filterMinPrice, filterMaxPrice, filterSort, filterLojas]);
+
+  const toggleLoja = (loja: string) => {
+    setFilterLojas((prev) =>
+      prev.includes(loja) ? prev.filter((l) => l !== loja) : [...prev, loja]
+    );
+  };
+
+  const clearFilters = () => {
+    setFilterMinPrice('');
+    setFilterMaxPrice('');
+    setFilterSort('relevante');
+    setFilterLojas([]);
+  };
 
   // Calculate points comparison for each result
   const getPontosForResult = (preco: number): PontosCalculation[] => {
@@ -298,6 +372,157 @@ export default function BuscasPage() {
         </div>
       </div>
 
+      {/* Advanced Filters Panel */}
+      {currentResults && !searching && (
+        <div className="card" style={{ marginBottom: 24, padding: '16px 20px' }}>
+          <div
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 16 }}>🎛️</span>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Filtros avancados</span>
+              {activeFilterCount > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                  background: '#7C3AED', color: 'white',
+                }}>
+                  {activeFilterCount} ativo{activeFilterCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); clearFilters(); }}
+                  style={{
+                    fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
+                    background: '#FEE2E2', color: '#DC2626', border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  Limpar filtros
+                </button>
+              )}
+              <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{showFilters ? '▲' : '▼'}</span>
+            </div>
+          </div>
+
+          {showFilters && (
+            <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 20 }}>
+              {/* Price range */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Faixa de preco (R$)
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={filterMinPrice}
+                    onChange={(e) => setFilterMinPrice(e.target.value)}
+                    style={{
+                      flex: 1, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+                      fontSize: 14, outline: 'none', width: 0,
+                    }}
+                    onFocus={(e) => (e.target.style.borderColor = '#7C3AED')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E5E7EB')}
+                  />
+                  <span style={{ color: 'var(--text-secondary)', flexShrink: 0, fontSize: 14 }}>—</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={filterMaxPrice}
+                    onChange={(e) => setFilterMaxPrice(e.target.value)}
+                    style={{
+                      flex: 1, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+                      fontSize: 14, outline: 'none', width: 0,
+                    }}
+                    onFocus={(e) => (e.target.style.borderColor = '#7C3AED')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E5E7EB')}
+                  />
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Ordenar por
+                </p>
+                <select
+                  value={filterSort}
+                  onChange={(e) => setFilterSort(e.target.value as typeof filterSort)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+                    fontSize: 14, outline: 'none', background: 'white', cursor: 'pointer',
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = '#7C3AED')}
+                  onBlur={(e) => (e.target.style.borderColor = '#E5E7EB')}
+                >
+                  <option value="relevante">Mais relevante</option>
+                  <option value="menor_preco">Menor preco</option>
+                  <option value="maior_avaliacao">Maior desconto</option>
+                </select>
+              </div>
+
+              {/* Stores */}
+              {availableLojas.length > 0 && (
+                <div style={{ gridColumn: availableLojas.length > 4 ? 'span 2' : undefined }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Filtrar por loja
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {availableLojas.map((loja) => {
+                      const selected = filterLojas.includes(loja);
+                      return (
+                        <button
+                          key={loja}
+                          onClick={() => toggleLoja(loja)}
+                          style={{
+                            padding: '5px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            border: selected ? '1.5px solid #7C3AED' : '1.5px solid #E5E7EB',
+                            background: selected ? '#F3E8FF' : 'white',
+                            color: selected ? '#7C3AED' : 'var(--text)',
+                            transition: 'all 150ms',
+                          }}
+                        >
+                          {loja}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Filter summary when collapsed with active filters */}
+          {!showFilters && activeFilterCount > 0 && (
+            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {filterMinPrice && (
+                <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#F3E8FF', color: '#7C3AED', fontWeight: 600 }}>
+                  Min: R$ {filterMinPrice}
+                </span>
+              )}
+              {filterMaxPrice && (
+                <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#F3E8FF', color: '#7C3AED', fontWeight: 600 }}>
+                  Max: R$ {filterMaxPrice}
+                </span>
+              )}
+              {filterSort !== 'relevante' && (
+                <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#F3E8FF', color: '#7C3AED', fontWeight: 600 }}>
+                  {filterSort === 'menor_preco' ? 'Menor preco' : 'Maior desconto'}
+                </span>
+              )}
+              {filterLojas.map((l) => (
+                <span key={l} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#F3E8FF', color: '#7C3AED', fontWeight: 600 }}>
+                  {l}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Searching state */}
       {searching && (
         <div className="card" style={{ textAlign: 'center', padding: '48px 24px', marginBottom: 24 }}>
@@ -321,7 +546,7 @@ export default function BuscasPage() {
       )}
 
       {/* Results */}
-      {currentResults && !searching && (
+      {filteredResults && !searching && (
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
             <h3 style={{ fontSize: 18, fontWeight: 700 }}>
@@ -336,9 +561,32 @@ export default function BuscasPage() {
                 {`REAL - ${searchFonte}`}
               </span>
             )}
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+              {filteredResults.length} resultado{filteredResults.length !== 1 ? 's' : ''}
+              {activeFilterCount > 0 && deduplicatedResults && filteredResults.length < deduplicatedResults.length && (
+                <span style={{ color: '#7C3AED', fontWeight: 600 }}> (filtrado de {deduplicatedResults.length})</span>
+              )}
+            </span>
           </div>
+
+          {filteredResults.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 24px', marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🔎</div>
+              <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Nenhum resultado com esses filtros</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>Tente ajustar ou limpar os filtros.</p>
+              <button
+                onClick={clearFilters}
+                style={{
+                  padding: '8px 20px', borderRadius: 10, border: 'none', background: '#7C3AED',
+                  color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
-            {currentResults.map((result, i) => {
+            {filteredResults.map((result, i) => {
               const isCheapest = result.disponivel && result.preco === minPrice;
               const pontosRanking = getPontosForResult(result.preco);
               const top3 = pontosRanking.slice(0, 3);
@@ -353,28 +601,34 @@ export default function BuscasPage() {
                   className="card"
                   style={{
                     padding: '20px',
-                    border: isCheapest ? '2px solid #00C853' : undefined,
+                    border: isCheapest ? '2px solid #00C853' : '1px solid transparent',
+                    background: isCheapest ? 'linear-gradient(135deg, #F0FFF4, #FAFFFC)' : undefined,
                     position: 'relative',
                     opacity: result.disponivel ? 1 : 0.5,
                     display: 'flex',
                     flexDirection: 'column',
+                    boxShadow: isCheapest ? '0 4px 20px rgba(0, 200, 83, 0.15)' : undefined,
                   }}
                 >
                   {isCheapest && (
                     <div
                       style={{
                         position: 'absolute',
-                        top: -10,
-                        right: 12,
-                        background: '#00C853',
+                        top: -12,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: 'linear-gradient(135deg, #00C853, #00E676)',
                         color: 'white',
                         fontSize: 11,
-                        fontWeight: 700,
-                        padding: '3px 10px',
+                        fontWeight: 800,
+                        padding: '4px 14px',
                         borderRadius: 20,
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 8px rgba(0,200,83,0.4)',
+                        letterSpacing: '0.3px',
                       }}
                     >
-                      Menor preco!
+                      🏆 Menor preco!
                     </div>
                   )}
                   {result.imagem && (
@@ -426,14 +680,24 @@ export default function BuscasPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
                         fontSize: 13,
-                        color: '#7C3AED',
-                        fontWeight: 600,
+                        fontWeight: 700,
                         textDecoration: 'none',
                         marginBottom: 12,
+                        padding: '8px 16px',
+                        borderRadius: 10,
+                        background: isCheapest ? '#00C853' : '#7C3AED',
+                        color: 'white',
+                        transition: 'opacity 150ms',
+                        width: 'fit-content',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                     >
-                      Ver oferta \u2192
+                      🛒 Ver oferta →
                     </a>
                   )}
 
@@ -566,6 +830,7 @@ export default function BuscasPage() {
               );
             })}
           </div>
+          )}
 
           {/* Card recommendation */}
           <div className="card" style={{ background: 'linear-gradient(135deg, #F0FFF4, #E8F5E9)', border: '1px solid #A5D6A7' }}>

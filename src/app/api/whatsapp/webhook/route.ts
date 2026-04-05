@@ -8,13 +8,25 @@ const WA_TOKEN = process.env.WHATSAPP_TOKEN!;
 const WA_PHONE_ID = process.env.WHATSAPP_PHONE_ID!;
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'dimdim2026';
 
+// ── Normaliza número BR: 554196444719 → 5541996444719 (adiciona 9 dígito) ──
+function normalizeBRNumber(num: string): string {
+  const digits = num.replace(/[^\d]/g, '');
+  // Número BR com 12 dígitos (55 + DDD 2 + número 8): adiciona 9 antes do número
+  if (digits.startsWith('55') && digits.length === 12) {
+    return digits.slice(0, 4) + '9' + digits.slice(4);
+  }
+  return digits;
+}
+
 // ── ENVIAR mensagem via Meta API ─────────────────────────────────
 async function sendWhatsApp(to: string, text: string) {
   if (!WA_TOKEN || !WA_PHONE_ID) {
     console.error('❌ WHATSAPP_TOKEN ou WHATSAPP_PHONE_ID não configurados');
     return;
   }
-  const url = `https://graph.facebook.com/v19.0/${WA_PHONE_ID}/messages`;
+  // Usa o número exato que a Meta entrega (sem normalizar)
+  const toNormalized = to.replace(/[^\d]/g, '');
+  const url = `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -24,7 +36,7 @@ async function sendWhatsApp(to: string, text: string) {
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      to: toNormalized,
       type: 'text',
       text: { body: text },
     }),

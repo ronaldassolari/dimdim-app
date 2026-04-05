@@ -271,6 +271,81 @@ export default function PontosPage() {
 
   const meusPrograms = programas.filter(p => p.saldo !== null && p.saldo > 0);
 
+  // --- Níveis de fidelidade ---
+  interface NivelConfig {
+    label: 'Bronze' | 'Prata' | 'Ouro';
+    min: number;
+    max: number | null;
+    cor: string;
+    corFundo: string;
+    corTexto: string;
+    multiplicador: string;
+    beneficios: string[];
+    icone: string;
+  }
+
+  const NIVEIS: NivelConfig[] = [
+    {
+      label: 'Bronze',
+      min: 0,
+      max: 4999,
+      cor: '#CD7F32',
+      corFundo: '#FDF5EC',
+      corTexto: '#92400E',
+      multiplicador: '1x',
+      beneficios: ['Acúmulo básico de pontos', 'Resgates em produtos'],
+      icone: '🥉',
+    },
+    {
+      label: 'Prata',
+      min: 5000,
+      max: 14999,
+      cor: '#9CA3AF',
+      corFundo: '#F3F4F6',
+      corTexto: '#374151',
+      multiplicador: '1.25x',
+      beneficios: ['Bônus de 25% nos resgates', 'Prioridade no atendimento', 'Acesso a promoções exclusivas'],
+      icone: '🥈',
+    },
+    {
+      label: 'Ouro',
+      min: 15000,
+      max: null,
+      cor: '#F59E0B',
+      corFundo: '#FFFBEB',
+      corTexto: '#92400E',
+      multiplicador: '1.5x',
+      beneficios: ['Bônus de 50% nos resgates', 'Cashback acelerado', 'Acesso VIP e transferências premium'],
+      icone: '🥇',
+    },
+  ];
+
+  function getNivel(saldo: number): NivelConfig {
+    if (saldo >= 15000) return NIVEIS[2];
+    if (saldo >= 5000) return NIVEIS[1];
+    return NIVEIS[0];
+  }
+
+  function getProgressoNivel(saldo: number): { porcentagem: number; faltam: number; proximoNivel: NivelConfig | null } {
+    const nivelAtual = getNivel(saldo);
+    const idx = NIVEIS.indexOf(nivelAtual);
+    const proximo = idx < NIVEIS.length - 1 ? NIVEIS[idx + 1] : null;
+    if (!proximo) return { porcentagem: 100, faltam: 0, proximoNivel: null };
+    const range = proximo.min - nivelAtual.min;
+    const progresso = saldo - nivelAtual.min;
+    const porcentagem = Math.min(100, Math.round((progresso / range) * 100));
+    const faltam = proximo.min - saldo;
+    return { porcentagem, faltam, proximoNivel: proximo };
+  }
+
+  function getResgateLink(nomePrograma: string): string {
+    const nome = nomePrograma.toLowerCase();
+    if (nome.includes('livelo')) return 'https://www.livelo.com.br/resgate';
+    if (nome.includes('esfera')) return 'https://www.esfera.com.br/resgate';
+    if (nome.includes('smiles')) return 'https://www.smiles.com.br/resgate';
+    return 'https://www.google.com/search?q=' + encodeURIComponent(nomePrograma + ' resgatar pontos');
+  }
+
   const getPersonalizedMessage = (item: RankingItem, best: RankingItem | null, ranking: RankingItem[]) => {
     const nivel = item.nivel.toLowerCase();
     if (['black', 'infinite', 'signature'].includes(nivel)) {
@@ -376,6 +451,11 @@ export default function PontosPage() {
                     const diasValidade = prog.validade ? daysUntilDate(prog.validade) : null;
                     const isEditing = editingId === prog.id;
 
+                    const saldo = prog.saldo || 0;
+                    const nivel = getNivel(saldo);
+                    const { porcentagem, faltam, proximoNivel } = getProgressoNivel(saldo);
+                    const resgateLink = getResgateLink(prog.nome);
+
                     return (
                       <div
                         key={prog.id}
@@ -393,6 +473,7 @@ export default function PontosPage() {
                           e.currentTarget.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
                         }}
                       >
+                        {/* Header: ícone + nome + badge de nível */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                           <div
                             style={{
@@ -404,26 +485,44 @@ export default function PontosPage() {
                               alignItems: 'center',
                               justifyContent: 'center',
                               fontSize: 22,
+                              flexShrink: 0,
                             }}
                           >
                             {programaTypeIcon(prog.tipo)}
                           </div>
-                          <div>
+                          <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 15, fontWeight: 700 }}>{prog.nome}</div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
                               {prog.tipo}
                             </div>
                           </div>
+                          {/* Badge de nível */}
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '4px 10px',
+                            borderRadius: 20,
+                            background: nivel.corFundo,
+                            border: `1.5px solid ${nivel.cor}`,
+                            flexShrink: 0,
+                          }}>
+                            <span style={{ fontSize: 14 }}>{nivel.icone}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: nivel.corTexto }}>{nivel.label}</span>
+                          </div>
                         </div>
 
+                        {/* Saldo + botão editar */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                           <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--purple)' }}>
-                            {(prog.saldo || 0).toLocaleString('pt-BR')}
+                            {saldo.toLocaleString('pt-BR')}
                           </div>
+                          <span style={{ fontSize: 13, color: 'var(--text-secondary)', alignSelf: 'flex-end', marginBottom: 6 }}>pts</span>
                           <button
                             onClick={() => openEditPrograma(prog)}
                             title="Editar programa"
                             style={{
+                              marginLeft: 'auto',
                               width: 32,
                               height: 32,
                               borderRadius: 10,
@@ -441,10 +540,70 @@ export default function PontosPage() {
                             ✏️
                           </button>
                         </div>
-                        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 14 }}>
                           ≈ {formatMoney(valorReais)}
                         </div>
 
+                        {/* Barra de progresso para o próximo nível */}
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: nivel.corTexto }}>
+                              {nivel.icone} {nivel.label}
+                            </span>
+                            {proximoNivel ? (
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                Faltam {faltam.toLocaleString('pt-BR')} pts para {proximoNivel.icone} {proximoNivel.label}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>
+                                Nível máximo!
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            width: '100%',
+                            height: 8,
+                            borderRadius: 99,
+                            background: '#E5E7EB',
+                            overflow: 'hidden',
+                          }}>
+                            <div style={{
+                              height: '100%',
+                              width: `${porcentagem}%`,
+                              borderRadius: 99,
+                              background: proximoNivel === null
+                                ? 'linear-gradient(90deg, #F59E0B, #FBBF24)'
+                                : nivel.label === 'Prata'
+                                ? 'linear-gradient(90deg, #9CA3AF, #D1D5DB)'
+                                : 'linear-gradient(90deg, #CD7F32, #E8A96B)',
+                              transition: 'width 600ms ease',
+                            }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, textAlign: 'right' }}>
+                            {porcentagem}% {proximoNivel ? `para ${proximoNivel.label}` : 'completo'}
+                          </div>
+                        </div>
+
+                        {/* Multiplicador + benefícios */}
+                        <div style={{
+                          background: nivel.corFundo,
+                          borderRadius: 12,
+                          padding: '12px 14px',
+                          marginBottom: 14,
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: nivel.corTexto, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                              Multiplicador {nivel.multiplicador}
+                            </span>
+                          </div>
+                          <ul style={{ margin: 0, padding: '0 0 0 16px', listStyle: 'disc' }}>
+                            {nivel.beneficios.map((b, i) => (
+                              <li key={i} style={{ fontSize: 12, color: nivel.corTexto, lineHeight: 1.6 }}>{b}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Validade */}
                         {diasValidade !== null && (
                           <div
                             style={{
@@ -466,11 +625,33 @@ export default function PontosPage() {
                           </div>
                         )}
 
+                        {/* Botão Resgatar Pontos */}
+                        <a
+                          href={resgateLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'block',
+                            textAlign: 'center',
+                            padding: '10px 16px',
+                            borderRadius: 10,
+                            background: 'var(--purple)',
+                            color: 'white',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            marginBottom: 8,
+                            transition: 'opacity 200ms ease',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                        >
+                          Resgatar Pontos →
+                        </a>
 
                         <button
                           onClick={() => setDeleteConfirm(prog)}
                           style={{
-                            marginTop: 8,
                             padding: '8px 16px',
                             borderRadius: 10,
                             border: '1.5px solid #FCA5A5',
