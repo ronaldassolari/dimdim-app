@@ -340,9 +340,9 @@ export default function PontosPage() {
 
   function getResgateLink(nomePrograma: string): string {
     const nome = nomePrograma.toLowerCase();
-    if (nome.includes('livelo')) return 'https://www.livelo.com.br/resgate';
-    if (nome.includes('esfera')) return 'https://www.esfera.com.br/resgate';
-    if (nome.includes('smiles')) return 'https://www.smiles.com.br/resgate';
+    if (nome.includes('livelo')) return 'https://www.livelo.com.br/ganhe-pontos/compre-e-ganhe';
+    if (nome.includes('esfera')) return 'https://www.esfera.com.br/tudo-para-voce/resgatar';
+    if (nome.includes('smiles')) return 'https://www.smiles.com.br/home';
     return 'https://www.google.com/search?q=' + encodeURIComponent(nomePrograma + ' resgatar pontos');
   }
 

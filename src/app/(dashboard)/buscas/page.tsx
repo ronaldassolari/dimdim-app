@@ -111,7 +111,7 @@ export default function BuscasPage() {
   const [expandedPontos, setExpandedPontos] = useState<Record<number, boolean>>({});
 
   // Advanced filter state
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [filterMinPrice, setFilterMinPrice] = useState('');
   const [filterMaxPrice, setFilterMaxPrice] = useState('');
   const [filterSort, setFilterSort] = useState<'relevante' | 'menor_preco' | 'maior_avaliacao'>('relevante');
@@ -593,7 +593,10 @@ export default function BuscasPage() {
               const rest = pontosRanking.slice(3);
               const isExpanded = expandedPontos[i] || false;
               const storeUrl = getStoreSearchUrl(result.loja, currentProduct);
-              const ofertaUrl = result.url || result.link || storeUrl;
+              // Ignora URLs genéricas de busca (ex: buscape.com.br/search?q=...) e usa storeUrl específica
+              const isGenericSearchUrl = (u?: string) => !u || u.includes('/search?q=') || u.includes('?q=');
+              const rawUrl = result.url || result.link;
+              const ofertaUrl = (!isGenericSearchUrl(rawUrl) ? rawUrl : null) || storeUrl || rawUrl || '#';
 
               return (
                 <div
