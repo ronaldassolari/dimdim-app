@@ -202,6 +202,54 @@ async function searchBuscape(produto: string): Promise<PriceResult[]> {
   return results;
 }
 
+async function searchZoom(produto: string): Promise<PriceResult[]> {
+  const url = `https://www.zoom.com.br/search?q=${encodeURIComponent(produto)}`;
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!res.ok) throw new Error(`Zoom error: ${res.status}`);
+
+  const html = await res.text();
+  const startTag = '<script id="__NEXT_DATA__" type="application/json">';
+  const startIdx = html.indexOf(startTag);
+  const endIdx = startIdx >= 0 ? html.indexOf('</script>', startIdx + startTag.length) : -1;
+  const jsonStr = startIdx >= 0 && endIdx >= 0 ? html.slice(startIdx + startTag.length, endIdx) : null;
+  const match = jsonStr ? [null, jsonStr] : null;
+  if (!match || !match[1]) throw new Error('Zoom: __NEXT_DATA__ not found');
+
+  const data = JSON.parse(match[1]);
+  const hits: Array<{
+    name: string;
+    price: number;
+    image?: string;
+    url: string;
+    bestOffer?: { merchantName?: string };
+  }> = data?.props?.initialReduxState?.hits?.hits ?? [];
+
+  const results: PriceResult[] = [];
+  for (const hit of hits) {
+    if (!hit.price || hit.price <= 0) continue;
+    results.push({
+      titulo: hit.name?.substring(0, 80) || produto,
+      preco: Math.round(hit.price * 100) / 100,
+      preco_original: null,
+      desconto_percent: 0,
+      url: `https://www.zoom.com.br${hit.url}`,
+      imagem: hit.image || null,
+      loja: hit.bestOffer?.merchantName || 'Zoom',
+      disponivel: true,
+    });
+  }
+
+  return results.sort((a, b) => a.preco - b.preco).slice(0, 10);
+}
+
 async function searchBing(produto: string): Promise<PriceResult[]> {
   const apiKey = process.env.BING_API_KEY;
   if (!apiKey) return [];
@@ -244,45 +292,54 @@ async function searchBing(produto: string): Promise<PriceResult[]> {
 export async function searchPrices(produto: string): Promise<SearchResponse> {
   const now = new Date().toISOString();
 
-  // Cascading: Google → Mercado Livre → Bing
-  const sources: { name: string; fn: () => Promise<PriceResult[]> }[] = [
+  // Run all sources in parallel, merge results
+  const sources = [
+    { name: 'Zoom', fn: () => searchZoom(produto) },
     { name: 'Google', fn: () => searchGoogle(produto) },
     { name: 'Mercado Livre', fn: () => searchMercadoLivre(produto) },
     { name: 'Bing', fn: () => searchBing(produto) },
     { name: 'Buscapé', fn: () => searchBuscape(produto) },
   ];
 
-  for (const source of sources) {
-    try {
-      const resultados = await source.fn();
-      if (resultados.length > 0) {
-        console.log(`[price-search] Fonte: ${source.name} — ${resultados.length} resultados para "${produto}"`);
-        const disponiveis = resultados.filter(r => r.disponivel);
-        const menor = disponiveis.length > 0
-          ? disponiveis.reduce((min, r) => r.preco < min.preco ? r : min, disponiveis[0])
-          : null;
+  const settled = await Promise.allSettled(sources.map(s => s.fn()));
+  const fontes: string[] = [];
+  let allResults: PriceResult[] = [];
 
-        return {
-          produto,
-          resultados,
-          menor_preco: menor ? { loja: menor.loja, preco: menor.preco, url: menor.url } : null,
-          status: 'real',
-          fonte: source.name,
-          atualizado_em: now,
-        };
-      }
-    } catch (err) {
-      console.warn(`[price-search] ${source.name} falhou:`, err);
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'fulfilled' && result.value.length > 0) {
+      console.log(`[price-search] ${sources[i].name} — ${result.value.length} resultados`);
+      fontes.push(sources[i].name);
+      allResults = allResults.concat(result.value);
+    } else if (result.status === 'rejected') {
+      console.warn(`[price-search] ${sources[i].name} falhou:`, result.reason);
     }
   }
 
-  // If everything fails, return empty with clear message
+  // Deduplicate by rounding price to 2 decimals + loja
+  const seen = new Set<string>();
+  const resultados = allResults.filter(r => {
+    const key = `${r.loja}|${r.preco.toFixed(2)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => a.preco - b.preco);
+
+  if (resultados.length === 0) {
+    return { produto, resultados: [], menor_preco: null, status: 'real', fonte: 'nenhuma', atualizado_em: now };
+  }
+
+  const disponiveis = resultados.filter(r => r.disponivel);
+  const menor = disponiveis.length > 0
+    ? disponiveis.reduce((min, r) => r.preco < min.preco ? r : min, disponiveis[0])
+    : null;
+
   return {
     produto,
-    resultados: [],
-    menor_preco: null,
+    resultados,
+    menor_preco: menor ? { loja: menor.loja, preco: menor.preco, url: menor.url } : null,
     status: 'real',
-    fonte: 'nenhuma',
+    fonte: fontes.join('+'),
     atualizado_em: now,
   };
 }

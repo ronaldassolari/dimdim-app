@@ -11,7 +11,7 @@ export interface PontosProgram {
 export const pontosPrograms: PontosProgram[] = [
   // MAGAZINE LUIZA
   { id: "dots_magalu", nome: "Dots", loja: "Magazine Luiza", taxa: 0.25, valorPorPonto: 0.0154, tipo: "cashback", site: "https://ganheonline.dotz.com.br/" },
-  { id: "azul_magalu", nome: "Azul Fidelidade", loja: "Magazine Luiza", taxa: 14, valorPorPonto: 0.05, tipo: "milhas", site: "https://www.voeazul.com.br/" },
+  { id: "azul_magalu", nome: "Azul Fidelidade", loja: "Magazine Luiza", taxa: 14, valorPorPonto: 0.05, tipo: "milhas", site: "https://shopping.azulfidelidade.com.br/categoria/29279/magalu" },
   { id: "livelo_magalu", nome: "Livelo", loja: "Magazine Luiza", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/" },
   // AMAZON
   { id: "prime_amazon", nome: "Amazon Prime Rewards", loja: "Amazon", taxa: 1, valorPorPonto: 0.01, tipo: "cashback", site: "https://www.amazon.com.br/" },

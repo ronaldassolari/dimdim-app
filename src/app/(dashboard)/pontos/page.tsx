@@ -343,6 +343,8 @@ export default function PontosPage() {
     if (nome.includes('livelo')) return 'https://www.livelo.com.br/ganhe-pontos/compre-e-ganhe';
     if (nome.includes('esfera')) return 'https://www.esfera.com.br/tudo-para-voce/resgatar';
     if (nome.includes('smiles')) return 'https://www.smiles.com.br/home';
+    if (nome.includes('azul')) return 'https://shopping.azulfidelidade.com.br/categoria/29279/magalu';
+    if (nome.includes('dotz') || nome.includes('dots')) return 'https://ganheonline.dotz.com.br/';
     return 'https://www.google.com/search?q=' + encodeURIComponent(nomePrograma + ' resgatar pontos');
   }
 
