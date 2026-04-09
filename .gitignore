@@ -39,3 +39,124 @@ next-env.d.ts
 dimdim.db
 dimdim.db-shm
 dimdim.db-wal
+
+# ============================================
+# .gitignore PADRÃO — Ronald / Projetos IA
+# Copia este arquivo para a raiz de cada projeto
+# ============================================
+
+# ----------------------------
+# SEGURANÇA — NUNCA COMMITAR
+# ----------------------------
+.env
+.env.*
+!.env.example
+secrets.json
+credentials.json
+serviceAccountKey.json
+firebase-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+config.local.*
+
+# ----------------------------
+# NODE / JAVASCRIPT / REACT
+# ----------------------------
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+.eslintcache
+
+# ----------------------------
+# PYTHON
+# ----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+.eggs/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ----------------------------
+# BANCO DE DADOS
+# ----------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.bak
+dump.rdb
+
+# ----------------------------
+# LOGS E TEMPORÁRIOS
+# ----------------------------
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----------------------------
+# IDEs E EDITORES
+# ----------------------------
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.history/
+*.code-workspace
+
+# ----------------------------
+# SISTEMA OPERACIONAL
+# ----------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+$RECYCLE.BIN/
+
+# ----------------------------
+# OUTROS
+# ----------------------------
+coverage/
+*.map
+.sass-cache/
+*.css.map
+*.js.map
