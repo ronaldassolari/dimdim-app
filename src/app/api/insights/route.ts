@@ -115,7 +115,7 @@ function gerarInsightsEstaticos(dados: any): Insight[] {
 }
 
 async function gerarInsightsIA(dados: any): Promise<Insight[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) return gerarInsightsEstaticos(dados);
 
   try {
@@ -130,35 +130,38 @@ Dados do mês:
 - Top categorias de gasto: ${dados.topCategorias.map((c: any) => `${c.categoria}: R$ ${Number(c.total).toFixed(2)}`).join(', ')}
 - Metas: ${dados.metas.map((m: any) => `${m.titulo}: ${Math.round(Number(m.valor_atual) / Number(m.valor_alvo) * 100)}% (R$ ${Number(m.valor_atual).toFixed(2)} de R$ ${Number(m.valor_alvo).toFixed(2)})`).join(', ') || 'nenhuma'}
 
-Responda APENAS com JSON válido, sem markdown:
+Responda APENAS com JSON válido, sem markdown, sem explicação:
 {"insights":[{"tipo":"string","mensagem":"string","acao_sugerida":"string","urgencia":"baixa|media|alta"}]}`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'deepseek-chat',
         max_tokens: 600,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: 'Você é um assistente financeiro pessoal. Responda apenas com JSON válido, sem markdown.' },
+          { role: 'user', content: prompt },
+        ],
       }),
       signal: AbortSignal.timeout(15000),
     });
 
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) throw new Error(`DeepSeek API error: ${res.status}`);
 
     const data = await res.json();
-    const text = data.content?.[0]?.text || '';
-    const parsed = JSON.parse(text);
+    const text = data.choices?.[0]?.message?.content || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
     if (Array.isArray(parsed.insights) && parsed.insights.length > 0) {
       return parsed.insights.slice(0, 5);
     }
     throw new Error('Invalid response format');
   } catch (err) {
-    console.warn('Anthropic API falhou, usando insights estáticos:', err);
+    console.warn('DeepSeek API falhou, usando insights estáticos:', err);
     return gerarInsightsEstaticos(dados);
   }
 }

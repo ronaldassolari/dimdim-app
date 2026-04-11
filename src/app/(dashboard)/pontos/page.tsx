@@ -340,11 +340,17 @@ export default function PontosPage() {
 
   function getResgateLink(nomePrograma: string): string {
     const nome = nomePrograma.toLowerCase();
-    if (nome.includes('livelo')) return 'https://www.livelo.com.br/ganhe-pontos/compre-e-ganhe';
-    if (nome.includes('esfera')) return 'https://www.esfera.com.br/tudo-para-voce/resgatar';
-    if (nome.includes('smiles')) return 'https://www.smiles.com.br/home';
-    if (nome.includes('azul')) return 'https://shopping.azulfidelidade.com.br/categoria/29279/magalu';
-    if (nome.includes('dotz') || nome.includes('dots')) return 'https://ganheonline.dotz.com.br/';
+    if (nome.includes('livelo')) return 'https://www.livelo.com.br';
+    if (nome.includes('esfera')) return 'https://www.esfera.com.br';
+    if (nome.includes('smiles')) return 'https://www.smiles.com.br';
+    if (nome.includes('azul') || nome.includes('tudoazul')) return 'https://www.tudoazul.com.br';
+    if (nome.includes('latam')) return 'https://www.latampass.latam.com';
+    if (nome.includes('dotz') || nome.includes('dots')) return 'https://www.dotz.com.br';
+    if (nome.includes('membership') || nome.includes('amex')) return 'https://www.americanexpress.com/br/beneficios/pontos/membership-rewards';
+    if (nome.includes('nubank')) return 'https://nubank.com.br/rewards';
+    if (nome.includes('itau') || nome.includes('itaú')) return 'https://www.itau.com.br/cartoes/beneficios/pontositau';
+    if (nome.includes('bradesco') || nome.includes('livelo bradesco')) return 'https://banco.bradesco/cartoes/pontos-de-recompensa';
+    if (nome.includes('c6') || nome.includes('c6bank')) return 'https://c6bank.com.br/pontos';
     return 'https://www.google.com/search?q=' + encodeURIComponent(nomePrograma + ' resgatar pontos');
   }
 

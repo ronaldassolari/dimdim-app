@@ -3,6 +3,7 @@ import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
 import { searchPrices } from '@/lib/price-search';
+import { PROGRAMAS, melhorOpcao } from '@/lib/pontos-config';
 
 export async function GET() {
   try {
@@ -44,21 +45,37 @@ export async function POST(request: NextRequest) {
 
     // Busca análise de cartões do usuário
     const { rows: cartoes } = await sql`
-      SELECT id, apelido, banco, bandeira, nivel, cor, pontos_por_real
+      SELECT id, apelido, banco, bandeira, nivel, cor, pontos_por_real, programas_pontos
       FROM cartoes WHERE user_id = ${session.id} AND ativo = 1
     `;
 
     const analise_cartoes = (cartoes as any[]).map(c => {
+      const programas: string[] = JSON.parse(c.programas_pontos || '[]');
       const pontosGanhos = Math.round(menorPreco * Number(c.pontos_por_real));
+
+      // Taxa correta por programa (taxa_viagem = maior valor)
+      let taxaPorPonto = 0.01;
+      for (const prog of programas) {
+        if (PROGRAMAS[prog]) { taxaPorPonto = PROGRAMAS[prog].taxa_viagem; break; }
+      }
+
+      const valor_equivalente = Math.round(pontosGanhos * taxaPorPonto * 100) / 100;
+      const melhor = programas[0] && PROGRAMAS[programas[0]]
+        ? melhorOpcao(pontosGanhos, programas[0])
+        : null;
+
       return {
         cartao_id: c.id,
         apelido: c.apelido,
         banco: c.banco,
+        programas,
         pontos_ganhos: pontosGanhos,
-        valor_equivalente: Math.round(pontosGanhos * 0.01 * 100) / 100,
+        valor_equivalente,
+        taxa_por_ponto: taxaPorPonto,
+        melhor_opcao: melhor,
         melhor: false,
       };
-    }).sort((a, b) => b.pontos_ganhos - a.pontos_ganhos);
+    }).sort((a, b) => b.valor_equivalente - a.valor_equivalente);
 
     if (analise_cartoes.length > 0) analise_cartoes[0].melhor = true;
 

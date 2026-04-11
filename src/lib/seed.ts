@@ -18,6 +18,27 @@ export async function seed() {
       sql`SELECT COUNT(*) as c FROM aulas`,
     ]);
     if (Number(metasCheck[0].c) >= 5 && Number(aulasCheck[0].c) >= 10) {
+      // Garante que os links de promoção dos programas estão sempre atualizados
+      const linksAtualizar: [string, string][] = [
+        ['Livelo', 'https://www.livelo.com.br'],
+        ['Smiles', 'https://www.smiles.com.br'],
+        ['Latam Pass', 'https://www.latampass.latam.com'],
+        ['TudoAzul', 'https://www.tudoazul.com.br'],
+        ['Dotz', 'https://www.dotz.com.br'],
+        ['Esfera', 'https://www.programaesfera.com.br'],
+        ['Stix', 'https://www.stix.com.br'],
+        ['Elo Mais', 'https://www.elomais.com.br'],
+        ['Rappi', 'https://www.rappi.com.br'],
+        ['iFood', 'https://www.ifood.com.br'],
+        ['Uber', 'https://www.uber.com/br'],
+        ['99', 'https://www.99app.com'],
+        ['Multiplus', 'https://www.latampass.latam.com'],
+      ];
+      await Promise.allSettled(
+        linksAtualizar.map(([nome, link]) =>
+          sql`UPDATE programas_pontos SET link_cadastro = ${link} WHERE nome = ${nome} AND (link_cadastro IS NULL OR link_cadastro = '')`
+        )
+      );
       seeded = true;
       return;
     }

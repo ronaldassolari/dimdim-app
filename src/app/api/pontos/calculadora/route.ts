@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
+import { calcularValor, melhorOpcao, PROGRAMAS } from '@/lib/pontos-config';
 
 interface Cartao {
   id: number;
@@ -12,6 +13,40 @@ interface Cartao {
   pontos_por_real: number;
   cor: string;
   programas_pontos: string;
+}
+
+// Retorna a taxa de conversão correta por programa/banco
+// Usa pontos-config.ts como fonte única de verdade
+function getValorPonto(banco: string, programas: string[]): number {
+  // Tenta match pelo programa associado ao cartão
+  for (const prog of programas) {
+    if (PROGRAMAS[prog]) {
+      return PROGRAMAS[prog].taxa_viagem; // usa taxa viagem (maior valor)
+    }
+  }
+  // Fallback: tenta match pelo nome do banco
+  const b = (banco || '').toLowerCase();
+  const map: Record<string, string> = {
+    'livelo': 'Livelo',
+    'smiles': 'Smiles',
+    'latam': 'Latam Pass',
+    'azul': 'TudoAzul',
+    'esfera': 'Esfera',
+    'bradesco': 'Bradesco',
+    'itau': 'Itaucard',
+    'nubank': 'Nubank',
+    'c6': 'C6 Bank',
+    'dotz': 'Dotz',
+    'stix': 'Stix',
+    'membership': 'Membership Rewards',
+    'amex': 'Membership Rewards',
+  };
+  for (const [key, prog] of Object.entries(map)) {
+    if (b.includes(key) && PROGRAMAS[prog]) {
+      return PROGRAMAS[prog].taxa_viagem;
+    }
+  }
+  return 0.01; // fallback mínimo
 }
 
 export async function GET(request: NextRequest) {
@@ -39,27 +74,28 @@ export async function GET(request: NextRequest) {
       cartoes = rows as Cartao[];
     }
 
-    // Points value varies by program: Livelo ~0.02, Esfera ~0.025, Smiles ~0.02, default 0.01
-    const PONTOS_VALOR: Record<string, number> = {
-      'livelo': 0.02, 'esfera': 0.025, 'smiles': 0.02, 'azul': 0.05,
-      'latam': 0.03, 'dotz': 0.015, 'cashback': 1.0, 'default': 0.01,
-    };
-    const getValorPonto = (banco: string) => {
-      const b = (banco || '').toLowerCase();
-      for (const [key, val] of Object.entries(PONTOS_VALOR)) {
-        if (b.includes(key)) return val;
-      }
-      return PONTOS_VALOR.default;
-    };
-
     const ranking = cartoes.map((cartao) => {
+      const programas: string[] = JSON.parse(cartao.programas_pontos || '[]');
       const pontosGanhos = Math.round(valor * Number(cartao.pontos_por_real));
-      const valorPorPonto = getValorPonto(cartao.banco || cartao.apelido || '');
+      const valorPorPonto = getValorPonto(cartao.banco || cartao.apelido || '', programas);
       const valorEquivalente = Number((pontosGanhos * valorPorPonto).toFixed(2));
       const precoFinal = Number((valor - valorEquivalente).toFixed(2));
+
+      // Melhor opção por programa
+      const melhor = programas[0] && PROGRAMAS[programas[0]]
+        ? melhorOpcao(pontosGanhos, programas[0])
+        : null;
+
       return {
-        cartao_id: cartao.id, apelido: cartao.apelido, banco: cartao.banco,
-        pontos_por_real: Number(cartao.pontos_por_real), pontosGanhos, valorEquivalente, precoFinal,
+        cartao_id: cartao.id,
+        apelido: cartao.apelido,
+        banco: cartao.banco,
+        pontos_por_real: Number(cartao.pontos_por_real),
+        pontosGanhos,
+        valorEquivalente,
+        precoFinal,
+        valorPorPonto,
+        melhor_opcao: melhor,
       };
     }).sort((a, b) => a.precoFinal - b.precoFinal);
 
@@ -89,8 +125,15 @@ export async function POST(request: NextRequest) {
     const cartoes = rows as Cartao[];
 
     const ranking = cartoes.map((cartao) => {
+      const programas: string[] = JSON.parse(cartao.programas_pontos || '[]');
       const pontosGanhos = Math.round(valor * Number(cartao.pontos_por_real));
-      const valorEquivalente = Number((pontosGanhos * 0.01).toFixed(2));
+      const valorPorPonto = getValorPonto(cartao.banco || cartao.apelido || '', programas);
+      const valorEquivalente = Number((pontosGanhos * valorPorPonto).toFixed(2));
+      const precoFinal = Number((valor - valorEquivalente).toFixed(2));
+
+      const melhor = programas[0] && PROGRAMAS[programas[0]]
+        ? melhorOpcao(pontosGanhos, programas[0])
+        : null;
 
       return {
         cartao_id: cartao.id,
@@ -100,9 +143,12 @@ export async function POST(request: NextRequest) {
         nivel: cartao.nivel,
         cor: cartao.cor,
         pontos_por_real: Number(cartao.pontos_por_real),
-        programas_pontos: JSON.parse(cartao.programas_pontos || '[]'),
+        programas_pontos: programas,
         pontosGanhos,
         valorEquivalente,
+        valorPorPonto,
+        precoFinal,
+        melhor_opcao: melhor,
         categoria: categoria || null,
       };
     }).sort((a, b) => b.pontosGanhos - a.pontosGanhos);

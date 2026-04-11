@@ -1,4 +1,4 @@
-// Real price search with cascading fallback: Google → Mercado Livre → Bing
+// Real price search with cascading fallback: Zoom → Buscapé → Google → Bing → DeepSeek (IA)
 
 interface PriceResult {
   loja: string;
@@ -98,42 +98,60 @@ async function searchGoogle(produto: string): Promise<PriceResult[]> {
   return results.sort((a, b) => a.preco - b.preco);
 }
 
-async function searchMercadoLivre(produto: string): Promise<PriceResult[]> {
-  // ML API requires auth token now; try with token if available, otherwise with access_token
-  const token = process.env.ML_ACCESS_TOKEN;
-  const headers: Record<string, string> = {
-    'Accept': 'application/json',
-    'User-Agent': 'DimdimApp/1.0',
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+async function searchDeepSeekFallback(produto: string): Promise<PriceResult[]> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return [];
 
-  const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(produto)}&limit=10&sort=price_asc`;
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
+  const prompt = `Você é um comparador de preços brasileiro. Estime preços realistas de "${produto}" nas principais lojas brasileiras em abril de 2025.
 
-  if (!res.ok) throw new Error(`ML API error: ${res.status}`);
+Responda APENAS com JSON válido, sem markdown:
+{"resultados":[{"loja":"Amazon","preco":0,"titulo":"string","url":"https://www.amazon.com.br/s?k=produto"},{"loja":"Magalu","preco":0,"titulo":"string","url":"https://www.magazineluiza.com.br/busca/produto/"},{"loja":"Americanas","preco":0,"titulo":"string","url":"https://www.americanas.com.br/busca/produto"},{"loja":"Kabum","preco":0,"titulo":"string","url":"https://www.kabum.com.br/busca/produto"},{"loja":"Casas Bahia","preco":0,"titulo":"string","url":"https://www.casasbahia.com.br/busca/produto"}]}
 
-  const data = await res.json();
-  const results: PriceResult[] = [];
+Preencha os preços com estimativas reais baseadas no mercado. Não use 0.`;
 
-  for (const item of (data.results || [])) {
-    const preco = item.price || 0;
-    if (preco <= 0) continue;
-    const precoOriginal = item.original_price || null;
-    const desconto = precoOriginal ? Math.round(((precoOriginal - preco) / precoOriginal) * 100) : 0;
-
-    results.push({
-      loja: 'Mercado Livre',
-      preco: Math.round(preco * 100) / 100,
-      preco_original: precoOriginal ? Math.round(precoOriginal * 100) / 100 : null,
-      desconto_percent: desconto,
-      url: item.permalink || `https://www.mercadolivre.com.br`,
-      imagem: item.thumbnail || null,
-      disponivel: (item.available_quantity || 0) > 0,
-      titulo: item.title || produto,
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        max_tokens: 600,
+        messages: [
+          { role: 'system', content: 'Você é um assistente de comparação de preços. Responda apenas com JSON válido.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(12000),
     });
-  }
 
-  return results;
+    if (!res.ok) throw new Error(`DeepSeek error: ${res.status}`);
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+    if (!Array.isArray(parsed.resultados)) throw new Error('Invalid format');
+
+    return parsed.resultados
+      .filter((r: { preco?: number }) => r.preco && r.preco > 0)
+      .map((r: { loja: string; preco: number; titulo: string; url: string }) => ({
+        loja: r.loja,
+        preco: Math.round(Number(r.preco) * 100) / 100,
+        preco_original: null,
+        desconto_percent: 0,
+        url: r.url,
+        imagem: null,
+        disponivel: true,
+        titulo: r.titulo || produto,
+      }));
+  } catch (err) {
+    console.warn('[price-search] DeepSeek fallback falhou:', err);
+    return [];
+  }
 }
 
 async function searchBuscape(produto: string): Promise<PriceResult[]> {
@@ -292,13 +310,12 @@ async function searchBing(produto: string): Promise<PriceResult[]> {
 export async function searchPrices(produto: string): Promise<SearchResponse> {
   const now = new Date().toISOString();
 
-  // Run all sources in parallel, merge results
+  // Run real sources in parallel (Zoom + Buscapé + Google + Bing)
   const sources = [
     { name: 'Zoom', fn: () => searchZoom(produto) },
-    { name: 'Google', fn: () => searchGoogle(produto) },
-    { name: 'Mercado Livre', fn: () => searchMercadoLivre(produto) },
-    { name: 'Bing', fn: () => searchBing(produto) },
     { name: 'Buscapé', fn: () => searchBuscape(produto) },
+    { name: 'Google', fn: () => searchGoogle(produto) },
+    { name: 'Bing', fn: () => searchBing(produto) },
   ];
 
   const settled = await Promise.allSettled(sources.map(s => s.fn()));
@@ -313,6 +330,16 @@ export async function searchPrices(produto: string): Promise<SearchResponse> {
       allResults = allResults.concat(result.value);
     } else if (result.status === 'rejected') {
       console.warn(`[price-search] ${sources[i].name} falhou:`, result.reason);
+    }
+  }
+
+  // Fallback: se scraping não retornou nada, usa DeepSeek IA para estimar preços
+  if (allResults.length === 0) {
+    console.log('[price-search] Scraping sem resultados — ativando fallback DeepSeek IA');
+    const iaResults = await searchDeepSeekFallback(produto);
+    if (iaResults.length > 0) {
+      allResults = iaResults;
+      fontes.push('DeepSeek IA');
     }
   }
 
