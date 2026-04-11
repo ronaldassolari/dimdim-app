@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import sql from '@/lib/db'
+import { sql } from '@/lib/db'
 
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN ?? 'dimdim2026fb'
