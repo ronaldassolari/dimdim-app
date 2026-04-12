@@ -10,17 +10,17 @@ export interface PontosProgram {
 
 export const pontosPrograms: PontosProgram[] = [
   // MAGAZINE LUIZA
-  { id: "dots_magalu", nome: "Dots", loja: "Magazine Luiza", taxa: 0.25, valorPorPonto: 0.0154, tipo: "cashback", site: "https://ganheonline.dotz.com.br/" },
-  { id: "azul_magalu", nome: "Azul Fidelidade", loja: "Magazine Luiza", taxa: 14, valorPorPonto: 0.05, tipo: "milhas", site: "https://shopping.azulfidelidade.com.br/categoria/29279/magalu" },
-  { id: "livelo_magalu", nome: "Livelo", loja: "Magazine Luiza", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/" },
+  { id: "dots_magalu", nome: "Dotz", loja: "Magazine Luiza", taxa: 0.25, valorPorPonto: 0.0154, tipo: "cashback", site: "https://www.dotz.com.br/loja/magazine-luiza" },
+  { id: "azul_magalu", nome: "Azul Fidelidade", loja: "Magazine Luiza", taxa: 14, valorPorPonto: 0.02, tipo: "milhas", site: "https://shopping.azulfidelidade.com.br/" },
+  { id: "livelo_magalu", nome: "Livelo", loja: "Magazine Luiza", taxa: 2, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/ganhe-pontos/magalu" },
   // AMAZON
   { id: "prime_amazon", nome: "Amazon Prime Rewards", loja: "Amazon", taxa: 1, valorPorPonto: 0.01, tipo: "cashback", site: "https://www.amazon.com.br/" },
-  { id: "esfera_amazon", nome: "Esfera (Nubank)", loja: "Amazon", taxa: 2.6, valorPorPonto: 0.025, tipo: "milhas", site: "https://www.esfera.com.vc/" },
-  { id: "livelo_amazon", nome: "Livelo", loja: "Amazon", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/" },
+  { id: "esfera_amazon", nome: "Esfera", loja: "Amazon", taxa: 1, valorPorPonto: 0.025, tipo: "milhas", site: "https://www.esfera.com.vc/amazon" },
+  { id: "livelo_amazon", nome: "Livelo", loja: "Amazon", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/ganhe-pontos/amazon" },
   // SHOPEE
   { id: "coins_shopee", nome: "Shopee Coins", loja: "Shopee", taxa: 1, valorPorPonto: 0.01, tipo: "cashback", site: "https://shopee.com.br/" },
-  { id: "livelo_shopee", nome: "Livelo", loja: "Shopee", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/" },
-  { id: "esfera_shopee", nome: "Esfera (Nubank)", loja: "Shopee", taxa: 2.6, valorPorPonto: 0.025, tipo: "milhas", site: "https://www.esfera.com.vc/" },
+  { id: "livelo_shopee", nome: "Livelo", loja: "Shopee", taxa: 1, valorPorPonto: 0.02, tipo: "milhas", site: "https://www.livelo.com.br/ganhe-pontos/shopee" },
+  { id: "esfera_shopee", nome: "Esfera", loja: "Shopee", taxa: 0.5, valorPorPonto: 0.025, tipo: "milhas", site: "https://www.esfera.com.vc/shopee" },
   // NUBANK
   { id: "esfera_nubank", nome: "Esfera", loja: "Nubank", taxa: 1.25, valorPorPonto: 0.025, tipo: "milhas", site: "https://www.esfera.com.vc/" },
   { id: "cashback_nubank", nome: "Cashback Nubank", loja: "Nubank", taxa: 0.0125, valorPorPonto: 1, tipo: "cashback" },

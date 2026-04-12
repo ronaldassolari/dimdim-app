@@ -340,17 +340,18 @@ export default function PontosPage() {
 
   function getResgateLink(nomePrograma: string): string {
     const nome = nomePrograma.toLowerCase();
-    if (nome.includes('livelo')) return 'https://www.livelo.com.br';
-    if (nome.includes('esfera')) return 'https://www.esfera.com.br';
-    if (nome.includes('smiles')) return 'https://www.smiles.com.br';
-    if (nome.includes('azul') || nome.includes('tudoazul')) return 'https://www.tudoazul.com.br';
-    if (nome.includes('latam')) return 'https://www.latampass.latam.com';
-    if (nome.includes('dotz') || nome.includes('dots')) return 'https://www.dotz.com.br';
-    if (nome.includes('membership') || nome.includes('amex')) return 'https://www.americanexpress.com/br/beneficios/pontos/membership-rewards';
-    if (nome.includes('nubank')) return 'https://nubank.com.br/rewards';
+    if (nome.includes('livelo')) return 'https://www.livelo.com.br/resgatar-pontos';
+    if (nome.includes('esfera')) return 'https://www.esfera.com.vc/resgatar';
+    if (nome.includes('smiles')) return 'https://www.smiles.com.br/resgate';
+    if (nome.includes('azul') || nome.includes('tudoazul')) return 'https://www.azulfidelidade.com.br/resgatar';
+    if (nome.includes('latam')) return 'https://www.latampass.latam.com/pt_br/use-seus-pontos';
+    if (nome.includes('dotz') || nome.includes('dots')) return 'https://www.dotz.com.br/trocar-pontos';
+    if (nome.includes('membership') || nome.includes('amex')) return 'https://www.americanexpress.com/pt-br/rewards/membership-rewards/resgatar';
+    if (nome.includes('nubank')) return 'https://nubank.com.br/recompensas';
     if (nome.includes('itau') || nome.includes('itaú')) return 'https://www.itau.com.br/cartoes/beneficios/pontositau';
-    if (nome.includes('bradesco') || nome.includes('livelo bradesco')) return 'https://banco.bradesco/cartoes/pontos-de-recompensa';
-    if (nome.includes('c6') || nome.includes('c6bank')) return 'https://c6bank.com.br/pontos';
+    if (nome.includes('bradesco')) return 'https://banco.bradesco/html/classic/produtos-servicos/cartoes/beneficios/livelo.shtm';
+    if (nome.includes('c6') || nome.includes('c6bank')) return 'https://www.c6bank.com.br/cartao-de-credito/pontos';
+    if (nome.includes('sempre presente')) return 'https://www.itau.com.br/cartoes/beneficios/pontositau';
     return 'https://www.google.com/search?q=' + encodeURIComponent(nomePrograma + ' resgatar pontos');
   }
 
