@@ -16,6 +16,7 @@ interface SidebarProps {
 
 const menuItems = [
   { href: '/', icon: '🏠', label: 'Início' },
+  { href: '/assistente', icon: '🤖', label: 'Assessor IA' },
   { href: '/transacoes', icon: '💳', label: 'Transações' },
   { href: '/cartoes', icon: '🪪', label: 'Cartões' },
   { href: '/pontos', icon: '⭐', label: 'Pontos' },
@@ -28,9 +29,9 @@ const menuItems = [
 
 const mobileItems = [
   { href: '/', icon: '🏠', label: 'Início' },
+  { href: '/assistente', icon: '🤖', label: 'Assessor' },
   { href: '/transacoes', icon: '💳', label: 'Transações' },
   { href: '/cartoes', icon: '🪪', label: 'Cartões' },
-  { href: '/pontos', icon: '⭐', label: 'Pontos' },
   { href: '/configuracoes', icon: '⚙️', label: 'Mais' },
 ];
 

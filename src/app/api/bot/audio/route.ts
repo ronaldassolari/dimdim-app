@@ -1,93 +1,108 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { sql } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { seed } from '@/lib/seed';
+import { processarMensagemIA } from '@/lib/ai';
+
+interface UserRow {
+  id: number;
+  modo_bot: string;
+  humor_bot: string;
+  nome: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
     await seed();
 
-    const body = await request.json();
-    const { texto, whatsapp } = body;
+    const contentType = request.headers.get('content-type') ?? '';
+    let texto: string | null = null;
+    let audioBase64: string | null = null;
+    let audioMime = 'audio/webm';
+    let whatsapp: string | null = null;
 
-    // Audio comes pre-transcribed (by OpenClaw or frontend Web Speech API)
-    // We process the text to extract transaction data
-    if (!texto) {
-      return NextResponse.json({ error: 'Envie o texto transcrito do áudio' }, { status: 400 });
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      texto = body.texto ?? null;
+      audioBase64 = body.audio ?? null;
+      audioMime = body.mime ?? 'audio/webm';
+      whatsapp = body.whatsapp ?? null;
+    } else if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      const file = form.get('audio') as File | null;
+      whatsapp = form.get('whatsapp') as string | null;
+      if (file) {
+        const buf = await file.arrayBuffer();
+        audioBase64 = Buffer.from(buf).toString('base64');
+        audioMime = file.type || 'audio/webm';
+      }
+      texto = form.get('texto') as string | null;
     }
 
-    // Find user
-    let userId: number | null = null;
+    if (!texto && !audioBase64) {
+      return NextResponse.json({ error: 'Envie áudio ou texto transcrito' }, { status: 400 });
+    }
+
+    // Encontra o usuário
+    let user: UserRow | null = null;
     if (whatsapp) {
-      const { rows } = await sql`SELECT id FROM users WHERE whatsapp = ${whatsapp}`;
-      if (rows[0]) userId = (rows[0] as any).id;
+      const { rows } = await sql`SELECT id, modo_bot, humor_bot, nome FROM users WHERE whatsapp = ${whatsapp}`;
+      if (rows[0]) user = rows[0] as UserRow;
     }
-    if (!userId) {
+    if (!user) {
       const session = getSession();
-      if (session) userId = session.id;
+      if (session) {
+        const { rows } = await sql`SELECT id, modo_bot, humor_bot, nome FROM users WHERE id = ${session.id}`;
+        if (rows[0]) user = rows[0] as UserRow;
+      }
     }
-    if (!userId) {
+    if (!user) {
       return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 401 });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-
-    if (apiKey) {
-      // Use Anthropic to extract structured data
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 300,
-          messages: [{
-            role: 'user',
-            content: `O usuário ditou o seguinte sobre uma transação financeira: "${texto}"
-
-Extraia as informações e responda APENAS com JSON válido, sem markdown:
-{"descricao":"descrição curta","valor":99.90,"categoria":"Alimentação|Transporte|Saúde|Educação|Lazer|Moradia|Roupas|Eletrônicos|Serviços|Outros","tipo":"GASTO|RECEITA","data":"2026-03-19"}
-Se não souber a data, use a de hoje. Se for ambíguo o tipo, assuma GASTO.`,
-          }],
-        }),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const respText = data.content?.[0]?.text || '';
+    // Se chegou áudio em base64, transcreve com Whisper/Claude
+    if (audioBase64 && !texto) {
+      // Tenta transcrever com Whisper via fetch (OpenAI)
+      if (process.env.OPENAI_API_KEY) {
         try {
-          const jsonMatch = respText.match(/\{[\s\S]*\}/);
-          const dados = JSON.parse(jsonMatch ? jsonMatch[0] : respText);
-          return NextResponse.json({
-            dados,
-            texto: `🎤 Entendi: ${dados.descricao} — R$ ${(dados.valor || 0).toFixed(2)} (${dados.categoria})`,
+          const audioBuffer = Buffer.from(audioBase64, 'base64');
+          const formData = new FormData();
+          formData.append('file', new Blob([audioBuffer], { type: audioMime }), 'audio.webm');
+          formData.append('model', 'whisper-1');
+          formData.append('language', 'pt');
+
+          const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+            body: formData,
+            signal: AbortSignal.timeout(15000),
           });
-        } catch { /* fall through to regex extraction */ }
+
+          if (whisperRes.ok) {
+            const data = await whisperRes.json();
+            texto = data.text;
+          }
+        } catch { /* fallback abaixo */ }
       }
+
     }
 
-    // Fallback: regex extraction
-    const valorMatch = texto.match(/(\d+[.,]?\d*)\s*(?:reais?|r\$)/i) || texto.match(/r\$\s*(\d+[.,]?\d*)/i);
-    const valor = valorMatch ? parseFloat(valorMatch[1].replace(',', '.')) : 0;
+    if (!texto) {
+      return NextResponse.json({ error: 'Não foi possível transcrever o áudio' }, { status: 422 });
+    }
 
-    const descricao = texto.replace(/(\d+[.,]?\d*)\s*(?:reais?|r\$)/gi, '').replace(/r\$\s*(\d+[.,]?\d*)/gi, '').trim() || texto;
+    // Processa com o assessor IA
+    const { resposta, acoes } = await processarMensagemIA(texto, user);
 
     return NextResponse.json({
-      dados: {
-        descricao,
-        valor,
-        categoria: 'Outros',
-        tipo: 'GASTO',
-        data: new Date().toISOString().slice(0, 10),
-      },
-      texto: `🎤 Entendi: ${descricao} — R$ ${valor.toFixed(2)}`,
+      transcricao: texto,
+      resposta,
+      acoes,
     });
   } catch (error) {
-    console.error('Erro ao processar áudio:', error);
-    return NextResponse.json({ error: 'Erro ao processar áudio' }, { status: 500 });
+    Sentry.captureException(error);
+    console.error('Erro no bot de áudio:', error);
+    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });
   }
 }

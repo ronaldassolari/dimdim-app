@@ -36,6 +36,24 @@ export function detectarCategoria(desc: string): string {
 
 export type Intencao = 'gasto' | 'busca' | 'resumo' | 'pontos' | 'agenda' | 'boleto' | 'geral';
 
+// Extrai múltiplos gastos de uma única mensagem
+// Ex: "50 mercado, 30 uber, 20 farmácia" ou "gastei 50 no mercado\n30 no uber"
+export function extrairMultiplosGastos(msg: string): Array<{ valor: number; descricao: string; categoria: string }> {
+  // Divide por: nova linha, ponto-e-vírgula, barra, vírgula antes de número, " e " antes de número
+  const partes = msg
+    .split(/\n|;|\s\/\s|,\s*(?=\d|r\$)|(?<=\d)\s+e\s+(?=\d|r\$)/i)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+
+  if (partes.length <= 1) return [];
+
+  const gastos = partes
+    .map(p => extrairGasto(p))
+    .filter((g): g is NonNullable<typeof g> => g !== null);
+
+  return gastos.length >= 2 ? gastos : [];
+}
+
 export function detectarIntencao(msg: string): Intencao {
   const m = msg.toLowerCase().trim();
   if (/(?:gastei|paguei|comprei|custou|foram)\s+\d/.test(m)) return 'gasto';
