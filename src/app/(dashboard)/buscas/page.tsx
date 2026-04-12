@@ -589,14 +589,15 @@ export default function BuscasPage() {
             {filteredResults.map((result, i) => {
               const isCheapest = result.disponivel && result.preco === minPrice;
               const pontosRanking = getPontosForResult(result.preco);
-              const top3 = pontosRanking.slice(0, 3);
-              const rest = pontosRanking.slice(3);
+              const top4 = pontosRanking.slice(0, 4);
+              const rest = pontosRanking.slice(4);
               const isExpanded = expandedPontos[i] || false;
               const storeUrl = getStoreSearchUrl(result.loja, currentProduct);
               // Ignora URLs genéricas de busca (ex: buscape.com.br/search?q=...) e usa storeUrl específica
               const isGenericSearchUrl = (u?: string) => !u || u.includes('/search?q=') || u.includes('?q=');
               const rawUrl = result.url || result.link;
-              const ofertaUrl = (!isGenericSearchUrl(rawUrl) ? rawUrl : null) || storeUrl || rawUrl || '#';
+              // Valida ofertaUrl: prefere URL específica do produto, fallback busca na loja, fallback URL original
+              const ofertaUrl = (!isGenericSearchUrl(rawUrl) ? rawUrl : null) || storeUrl || (!isGenericSearchUrl(rawUrl) ? rawUrl : null) || '#';
 
               return (
                 <div
@@ -715,9 +716,10 @@ export default function BuscasPage() {
                         Programas de Pontos
                       </p>
 
-                      {/* Top 3 options */}
-                      {top3.map((opt, idx) => {
+                      {/* Top 4 options com links */}
+                      {top4.map((opt, idx) => {
                         const isBest = idx === 0;
+                        const programaLink = opt.site || null;
                         return (
                           <div
                             key={opt.id}
@@ -748,8 +750,33 @@ export default function BuscasPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 14 }}>{getMedalEmoji(idx)}</span>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {opt.loja} - {opt.nome}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {opt.loja} - {opt.nome}
+                                  </span>
+                                  {programaLink && (
+                                    <a
+                                      href={programaLink}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={`Acessar ${opt.nome}`}
+                                      style={{
+                                        flexShrink: 0,
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: isBest ? '#D97706' : '#7C3AED',
+                                        textDecoration: 'none',
+                                        padding: '1px 5px',
+                                        borderRadius: 4,
+                                        border: `1px solid ${isBest ? '#F59E0B' : '#DDD6FE'}`,
+                                        background: isBest ? '#FFFBEB' : '#F5F3FF',
+                                        lineHeight: 1.4,
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      ↗
+                                    </a>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                                   {opt.pontosGanhos.toLocaleString('pt-BR')} pts ({opt.taxa}x) = {formatMoney(opt.valorPontos)}
