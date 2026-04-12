@@ -52,15 +52,15 @@ export async function POST(req: NextRequest) {
     await seed();
     const users = await sql`SELECT * FROM users WHERE whatsapp_number = ${from} LIMIT 1`;
     if (users.length === 0) {
-      await enviarMensagem(from, '👋 Olá! Seu número não está cadastrado.\nAcesse o DimdimApp para se registrar! 🚀');
+      await enviarMensagem(from, '\u{1F44B} Ol\u00E1! Seu n\u00FAmero n\u00E3o est\u00E1 cadastrado.\nAcesse o DimdimApp para se registrar! \u{1F680}');
       return NextResponse.json({ ok: true });
     }
 
     const user = users[0];
-    const userId = user.id as string;
-    const nome = (user.nome as string) || 'você';
+    const userId = user.id as number;
+    const nome = (user.nome as string) || 'voc\u00EA';
 
-    // ── FAST PATH 1: Múltiplos gastos ──────────────────────────────────
+    // FAST PATH 1: M\u00FAltiplos gastos
     const multiplos = extrairMultiplosGastos(msg);
     if (multiplos.length >= 2) {
       let total = 0;
@@ -69,32 +69,32 @@ export async function POST(req: NextRequest) {
         const cats = await sql`SELECT id FROM categorias WHERE user_id = ${userId} AND nome ILIKE ${g.categoria} LIMIT 1`;
         await sql`INSERT INTO gastos (user_id, descricao, valor, categoria_id, data) VALUES (${userId}, ${g.descricao}, ${g.valor}, ${cats[0]?.id ?? null}, NOW())`;
         total += g.valor;
-        linhas.push(`• ${g.descricao}: R$ ${g.valor.toFixed(2)}`);
+        linhas.push(`\u2022 ${g.descricao}: R$ ${g.valor.toFixed(2)}`);
       }
-      await enviarMensagem(from, `✅ ${multiplos.length} gastos registrados!\n\n${linhas.join('\n')}\n\n💰 Total: R$ ${total.toFixed(2)}`);
+      await enviarMensagem(from, `\u2705 ${multiplos.length} gastos registrados!\n\n${linhas.join('\n')}\n\n\u{1F4B0} Total: R$ ${total.toFixed(2)}`);
       return NextResponse.json({ ok: true });
     }
 
-    // ── FAST PATH 2: Gasto simples (NLP confiante) ─────────────────────
+    // FAST PATH 2: Gasto simples (NLP confiante)
     const { intencao, confianca } = detectarIntencaoComConfianca(msg);
     if (intencao === 'gasto' && confianca >= 0.7) {
       const g = extrairGasto(msg);
       if (g && g.valor > 0) {
         const cats = await sql`SELECT id FROM categorias WHERE user_id = ${userId} AND nome ILIKE ${g.categoria} LIMIT 1`;
         await sql`INSERT INTO gastos (user_id, descricao, valor, categoria_id, data) VALUES (${userId}, ${g.descricao}, ${g.valor}, ${cats[0]?.id ?? null}, NOW())`;
-        await enviarMensagem(from, `✅ Gasto registrado!\n💸 ${g.descricao}: R$ ${g.valor.toFixed(2)}\n📂 ${g.categoria}`);
+        await enviarMensagem(from, `\u2705 Gasto registrado!\n\u{1F4B8} ${g.descricao}: R$ ${g.valor.toFixed(2)}\n\u{1F4C2} ${g.categoria}`);
         return NextResponse.json({ ok: true });
       }
     }
 
-    // ── FAST PATH 3: Resumo mensal ──────────────────────────────────────
+    // FAST PATH 3: Resumo mensal
     if (intencao === 'resumo' && confianca >= 0.8) {
       const [row] = await sql`SELECT COALESCE(SUM(valor),0)::numeric AS total, COUNT(*)::int AS qtd FROM gastos WHERE user_id = ${userId} AND data >= date_trunc('month', NOW())`;
-      await enviarMensagem(from, `📊 Resumo de ${nome} este mês:\n💸 Total: R$ ${Number(row?.total ?? 0).toFixed(2)}\n🧾 Transações: ${row?.qtd ?? 0}`);
+      await enviarMensagem(from, `\u{1F4CA} Resumo de ${nome} este m\u00EAs:\n\u{1F4B8} Total: R$ ${Number(row?.total ?? 0).toFixed(2)}\n\u{1F9FE} Transa\u00E7\u00F5es: ${row?.qtd ?? 0}`);
       return NextResponse.json({ ok: true });
     }
 
-    // ── AI ASSESSOR: agenda, boletos, busca, conselhos ─────────────────
+    // AI ASSESSOR: agenda, boletos, busca, conselhos
     const { resposta } = await processarMensagemIA(msg, {
       id: userId,
       nome,
