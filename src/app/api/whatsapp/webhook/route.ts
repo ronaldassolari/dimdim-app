@@ -60,8 +60,7 @@ export async function POST(req: NextRequest) {
 
     await seed();
 
-    // Busca usuario por whatsapp (varios formatos)
-    const users = await sql`
+    const { rows: userRows } = await sql`
       SELECT * FROM users
       WHERE whatsapp = ${wa}
          OR whatsapp = ${'55' + wa}
@@ -70,12 +69,12 @@ export async function POST(req: NextRequest) {
       LIMIT 1
     `;
 
-    if (users.length === 0) {
-      await enviarMensagem(wa, '\u{1F44B} Ola! Seu numero nao esta cadastrado.\nAcesse o DimdimApp para se registrar! \u{1F680}');
+    if (userRows.length === 0) {
+      await enviarMensagem(wa, 'Ola! Seu numero nao esta cadastrado. Acesse o DimdimApp para se registrar!');
       return NextResponse.json({ ok: true });
     }
 
-    const user = users[0];
+    const user = userRows[0];
     const userId = user.id as number;
     const nome = (user.nome as string) || 'voce';
     const hoje = new Date().toISOString().slice(0, 10);
@@ -89,9 +88,14 @@ export async function POST(req: NextRequest) {
         await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
                   VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
         total += g.valor;
-        linhas.push(`• ${g.descricao}: R$ ${g.valor.toFixed(2)}`);
+        linhas.push(`* ${g.descricao}: R$ ${g.valor.toFixed(2)}`);
       }
-      await enviarMensagem(wa, `✅ ${multiplos.length} gastos registrados!\n\n${linhas.join('\n')}\n\n💰 Total: R$ ${total.toFixed(2)}`);
+      await enviarMensagem(wa, `Gastos registrados! (${multiplos.length})
+
+${linhas.join('
+')}
+
+Total: R$ ${total.toFixed(2)}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -102,7 +106,7 @@ export async function POST(req: NextRequest) {
       if (g && g.valor > 0) {
         await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
                   VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
-        await enviarMensagem(wa, `✅ Gasto registrado!\n💸 ${g.descricao}: R$ ${g.valor.toFixed(2)}\n📂 ${g.categoria}`);
+        await enviarMensagem(wa, `Gasto registrado! ${g.descricao}: R$ ${g.valor.toFixed(2)} [${g.categoria}]`);
         return NextResponse.json({ ok: true });
       }
     }
@@ -110,26 +114,31 @@ export async function POST(req: NextRequest) {
     // FAST PATH 3: Resumo mensal
     if (intencao === 'resumo' && confianca >= 0.8) {
       const mes = new Date().toISOString().slice(0, 7) + '%';
-      const [gastoRow] = await sql`
+      const { rows: gastoRows } = await sql`
         SELECT COALESCE(SUM(valor),0)::numeric AS total, COUNT(*)::int AS qtd
         FROM transacoes
         WHERE user_id = ${userId} AND tipo = 'GASTO' AND data LIKE ${mes}
       `;
-      const [receitaRow] = await sql`
+      const { rows: receitaRows } = await sql`
         SELECT COALESCE(SUM(valor),0)::numeric AS total
         FROM transacoes
         WHERE user_id = ${userId} AND tipo = 'RECEITA' AND data LIKE ${mes}
       `;
-      const totalGasto = Number(gastoRow?.total ?? 0);
-      const totalReceita = Number(receitaRow?.total ?? 0);
+      const totalGasto = Number(gastoRows[0]?.total ?? 0);
+      const totalReceita = Number(receitaRows[0]?.total ?? 0);
       const saldo = totalReceita - totalGasto;
       const mesNome = new Date().toLocaleDateString('pt-BR', { month: 'long' });
       await enviarMensagem(wa,
-        `📊 *Resumo de ${nome} - ${mesNome}*\n\n` +
-        `💸 Gastos: R$ ${totalGasto.toFixed(2)}\n` +
-        `💚 Receitas: R$ ${totalReceita.toFixed(2)}\n` +
-        `💰 Saldo: R$ ${saldo.toFixed(2)}\n` +
-        `🧾 Transacoes: ${gastoRow?.qtd ?? 0}`
+        `Resumo de ${nome} - ${mesNome}
+
+` +
+        `Gastos: R$ ${totalGasto.toFixed(2)}
+` +
+        `Receitas: R$ ${totalReceita.toFixed(2)}
+` +
+        `Saldo: R$ ${saldo.toFixed(2)}
+` +
+        `Transacoes: ${gastoRows[0]?.qtd ?? 0}`
       );
       return NextResponse.json({ ok: true });
     }
