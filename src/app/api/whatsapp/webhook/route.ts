@@ -25,8 +25,16 @@ async function enviarMensagem(to: string, body: string) {
   try {
     await fetch(`https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }),
+      headers: {
+        Authorization: `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body },
+      }),
     });
   } catch (err) {
     console.error('Erro ao enviar mensagem:', err);
@@ -47,32 +55,43 @@ export async function POST(req: NextRequest) {
     const message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!message || message.type !== 'text') return NextResponse.json({ ok: true });
 
-    const from = normalizeBRNumber(message.from as string);
+    const wa = normalizeBRNumber(message.from as string);
     const msg = (message.text.body as string).trim();
 
     await seed();
-    const users = await sql`SELECT * FROM users WHERE whatsapp_number = ${from} LIMIT 1`;
+
+    // Busca usuario por whatsapp (varios formatos)
+    const users = await sql`
+      SELECT * FROM users
+      WHERE whatsapp = ${wa}
+         OR whatsapp = ${'55' + wa}
+         OR whatsapp = ${'+' + wa}
+         OR whatsapp = ${'+55' + wa.slice(2)}
+      LIMIT 1
+    `;
+
     if (users.length === 0) {
-      await enviarMensagem(from, '👋 Olá! Seu número não está cadastrado.\nAcesse o DimdimApp para se registrar! 🚀');
+      await enviarMensagem(wa, '\u{1F44B} Ola! Seu numero nao esta cadastrado.\nAcesse o DimdimApp para se registrar! \u{1F680}');
       return NextResponse.json({ ok: true });
     }
 
     const user = users[0];
     const userId = user.id as number;
-    const nome = (user.nome as string) || 'você';
+    const nome = (user.nome as string) || 'voce';
+    const hoje = new Date().toISOString().slice(0, 10);
 
-    // FAST PATH 1: Múltiplos gastos
+    // FAST PATH 1: Multiplos gastos
     const multiplos = extrairMultiplosGastos(msg);
     if (multiplos.length >= 2) {
       let total = 0;
       const linhas: string[] = [];
       for (const g of multiplos) {
-        const cats = await sql`SELECT id FROM categorias WHERE user_id = ${userId} AND nome ILIKE ${g.categoria} LIMIT 1`;
-        await sql`INSERT INTO gastos (user_id, descricao, valor, categoria_id, data) VALUES (${userId}, ${g.descricao}, ${g.valor}, ${cats[0]?.id ?? null}, NOW())`;
+        await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
+                  VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
         total += g.valor;
         linhas.push(`• ${g.descricao}: R$ ${g.valor.toFixed(2)}`);
       }
-      await enviarMensagem(from, `✅ ${multiplos.length} gastos registrados!\n\n${linhas.join('\n')}\n\n💰 Total: R$ ${total.toFixed(2)}`);
+      await enviarMensagem(wa, `✅ ${multiplos.length} gastos registrados!\n\n${linhas.join('\n')}\n\n💰 Total: R$ ${total.toFixed(2)}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -81,30 +100,49 @@ export async function POST(req: NextRequest) {
     if (intencao === 'gasto' && confianca >= 0.7) {
       const g = extrairGasto(msg);
       if (g && g.valor > 0) {
-        const cats = await sql`SELECT id FROM categorias WHERE user_id = ${userId} AND nome ILIKE ${g.categoria} LIMIT 1`;
-        await sql`INSERT INTO gastos (user_id, descricao, valor, categoria_id, data) VALUES (${userId}, ${g.descricao}, ${g.valor}, ${cats[0]?.id ?? null}, NOW())`;
-        await enviarMensagem(from, `✅ Gasto registrado!\n💸 ${g.descricao}: R$ ${g.valor.toFixed(2)}\n📂 ${g.categoria}`);
+        await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
+                  VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
+        await enviarMensagem(wa, `✅ Gasto registrado!\n💸 ${g.descricao}: R$ ${g.valor.toFixed(2)}\n📂 ${g.categoria}`);
         return NextResponse.json({ ok: true });
       }
     }
 
     // FAST PATH 3: Resumo mensal
     if (intencao === 'resumo' && confianca >= 0.8) {
-      const [row] = await sql`SELECT COALESCE(SUM(valor),0)::numeric AS total, COUNT(*)::int AS qtd FROM gastos WHERE user_id = ${userId} AND data >= date_trunc('month', NOW())`;
-      await enviarMensagem(from, `📊 Resumo de ${nome} este mês:\n💸 Total: R$ ${Number(row?.total ?? 0).toFixed(2)}\n🧾 Transações: ${row?.qtd ?? 0}`);
+      const mes = new Date().toISOString().slice(0, 7) + '%';
+      const [gastoRow] = await sql`
+        SELECT COALESCE(SUM(valor),0)::numeric AS total, COUNT(*)::int AS qtd
+        FROM transacoes
+        WHERE user_id = ${userId} AND tipo = 'GASTO' AND data LIKE ${mes}
+      `;
+      const [receitaRow] = await sql`
+        SELECT COALESCE(SUM(valor),0)::numeric AS total
+        FROM transacoes
+        WHERE user_id = ${userId} AND tipo = 'RECEITA' AND data LIKE ${mes}
+      `;
+      const totalGasto = Number(gastoRow?.total ?? 0);
+      const totalReceita = Number(receitaRow?.total ?? 0);
+      const saldo = totalReceita - totalGasto;
+      const mesNome = new Date().toLocaleDateString('pt-BR', { month: 'long' });
+      await enviarMensagem(wa,
+        `📊 *Resumo de ${nome} - ${mesNome}*\n\n` +
+        `💸 Gastos: R$ ${totalGasto.toFixed(2)}\n` +
+        `💚 Receitas: R$ ${totalReceita.toFixed(2)}\n` +
+        `💰 Saldo: R$ ${saldo.toFixed(2)}\n` +
+        `🧾 Transacoes: ${gastoRow?.qtd ?? 0}`
+      );
       return NextResponse.json({ ok: true });
     }
 
-    // AI ASSESSOR: agenda, boletos, busca, conselhos
+    // AI ASSESSOR
     const { resposta } = await processarMensagemIA(msg, {
       id: userId,
       nome,
       modo_bot: (user.modo_bot as string) || 'assistente',
       humor_bot: (user.humor_bot as string) || 'amigavel',
     });
-    await enviarMensagem(from, resposta);
+    await enviarMensagem(wa, resposta);
     return NextResponse.json({ ok: true });
-
   } catch (err) {
     console.error('Webhook error:', err);
     return NextResponse.json({ ok: true });
