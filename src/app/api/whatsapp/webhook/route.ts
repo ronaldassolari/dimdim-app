@@ -2,16 +2,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { seed } from '@/lib/seed';
-import {
-  extrairGasto,
-  extrairMultiplosGastos,
-  detectarIntencaoComConfianca,
-} from '@/lib/nlp';
 import { processarMensagemIA } from '@/lib/ai';
 
 const WA_TOKEN = process.env.WHATSAPP_TOKEN;
 const WA_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'dimdim2026';
+
+export const maxDuration = 60;
 
 function normalizeBRNumber(num) {
   const digits = num.replace(/[^\d]/g, '');
@@ -65,74 +62,20 @@ export async function POST(req) {
     `;
 
     if (userRows.length === 0) {
-      await enviarMensagem(wa, 'Ola! Seu numero nao esta cadastrado. Acesse o DimdimApp para se registrar!');
+      await enviarMensagem(wa, 'Ola! Seu numero nao esta cadastrado. Acesse o DimdimApp em dimdim-snowy.vercel.app para se registrar!');
       return NextResponse.json({ ok: true });
     }
 
     const user = userRows[0];
-    const userId = user.id;
-    const nome = user.nome || 'voce';
-    const hoje = new Date().toISOString().slice(0, 10);
 
-    // FAST PATH 1: Multiplos gastos
-    const multiplos = extrairMultiplosGastos(msg);
-    if (multiplos.length >= 2) {
-      let total = 0;
-      const linhas = [];
-      for (const g of multiplos) {
-        await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
-                  VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
-        total += g.valor;
-        linhas.push('* ' + g.descricao + ': R$ ' + g.valor.toFixed(2));
-      }
-      const msgMulti = 'Gastos registrados! (' + multiplos.length + ')\n\n' + linhas.join('\n') + '\n\nTotal: R$ ' + total.toFixed(2);
-      await enviarMensagem(wa, msgMulti);
-      return NextResponse.json({ ok: true });
-    }
-
-    // FAST PATH 2: Gasto simples (NLP confiante)
-    const { intencao, confianca } = detectarIntencaoComConfianca(msg);
-    if (intencao === 'gasto' && confianca >= 0.7) {
-      const g = extrairGasto(msg);
-      if (g && g.valor > 0) {
-        await sql`INSERT INTO transacoes (user_id, descricao, valor, tipo, categoria, status, data)
-                  VALUES (${userId}, ${g.descricao}, ${g.valor}, 'GASTO', ${g.categoria}, 'PAGO', ${hoje})`;
-        await enviarMensagem(wa, 'Gasto registrado! ' + g.descricao + ': R$ ' + g.valor.toFixed(2) + ' [' + g.categoria + ']');
-        return NextResponse.json({ ok: true });
-      }
-    }
-
-    // FAST PATH 3: Resumo mensal
-    if (intencao === 'resumo' && confianca >= 0.8) {
-      const mes = new Date().toISOString().slice(0, 7) + '%';
-      const { rows: gastoRows } = await sql`
-        SELECT COALESCE(SUM(valor),0)::numeric AS total, COUNT(*)::int AS qtd
-        FROM transacoes WHERE user_id = ${userId} AND tipo = 'GASTO' AND data LIKE ${mes}
-      `;
-      const { rows: receitaRows } = await sql`
-        SELECT COALESCE(SUM(valor),0)::numeric AS total
-        FROM transacoes WHERE user_id = ${userId} AND tipo = 'RECEITA' AND data LIKE ${mes}
-      `;
-      const totalGasto = Number(gastoRows[0]?.total ?? 0);
-      const totalReceita = Number(receitaRows[0]?.total ?? 0);
-      const saldo = totalReceita - totalGasto;
-      const mesNome = new Date().toLocaleDateString('pt-BR', { month: 'long' });
-      const msgResumo = 'Resumo de ' + nome + ' - ' + mesNome + '\n\n' +
-        'Gastos: R$ ' + totalGasto.toFixed(2) + '\n' +
-        'Receitas: R$ ' + totalReceita.toFixed(2) + '\n' +
-        'Saldo: R$ ' + saldo.toFixed(2) + '\n' +
-        'Transacoes: ' + (gastoRows[0]?.qtd ?? 0);
-      await enviarMensagem(wa, msgResumo);
-      return NextResponse.json({ ok: true });
-    }
-
-    // AI ASSESSOR
+    // Todos os fluxos passam pelo assessor IA
     const { resposta } = await processarMensagemIA(msg, {
-      id: userId,
-      nome,
-      modo_bot: user.modo_bot || 'assistente',
+      id: user.id,
+      nome: user.nome || 'voce',
+      modo_bot: user.modo_bot || 'normal',
       humor_bot: user.humor_bot || 'amigavel',
     });
+
     await enviarMensagem(wa, resposta);
     return NextResponse.json({ ok: true });
   } catch (err) {
