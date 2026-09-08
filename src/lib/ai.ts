@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { sql } from '@/lib/db';
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY?.trim(),
 });
 
 export interface UserContext {
